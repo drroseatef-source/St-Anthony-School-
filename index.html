@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b2a5c">
+<title>مدرسة القديس أثناسيوس للعلوم الكنسية</title>
+<link rel="icon" href="logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#1b2a5c;--gold:#e8b93c;--maroon:#7a1f2b;--cream:#f7f0e1;--bg:#fbf7ee;--c:#fff;--t:#23233a;--m:#777;--b:#e4dac4}
+@media (prefers-color-scheme:dark){:root{--bg:#14172a;--c:#1f2340;--t:#f1ead8;--m:#b3aa94;--b:#383d63;--cream:#1f2340}}
+*{box-sizing:border-box}
+body{margin:0;font-family:Cairo,system-ui,Tahoma,sans-serif;background:var(--bg);color:var(--t)}
+header{background:var(--navy);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:4px solid var(--gold)}
+header img{width:44px;height:52px;object-fit:contain}
+header b{display:block;font-size:1.05em;font-weight:900}header span{font-size:.75em;color:var(--gold)}
+main{max-width:640px;margin:auto;padding:12px}
+.card{background:var(--c);border:1px solid var(--b);border-radius:14px;padding:14px;margin:10px 0}
+input,select,button{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%;margin:4px 0}
+button{background:var(--maroon);color:#fff;border:0;cursor:pointer;font-weight:700}
+button.s{background:transparent;color:var(--maroon);border:1px solid var(--maroon)}
+button.g{background:var(--gold);color:var(--navy)}
+@media (prefers-color-scheme:dark){button.s{color:var(--gold);border-color:var(--gold)}}
+nav{display:flex;gap:6px}nav button{width:auto;flex:1}
+nav button.on{background:var(--navy)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}.m{color:var(--m);font-size:.85em}
+.idc{text-align:center;border:3px solid var(--maroon);border-radius:16px;background:var(--cream);padding:14px;position:relative}
+.idc img{width:56px}.idc h3{margin:6px 0 0;color:var(--navy)}.idc .n{color:var(--maroon);font-weight:900}
+@media (prefers-color-scheme:dark){.idc h3{color:var(--gold)}.idc .n{color:var(--gold)}}
+@media print{body>*:not(main){display:none}nav,.noprint{display:none}}
+</style>
+</head>
+<body>
+<header><img src="logo.png" alt=""><div><b>مدرسة القديس أثناسيوس للعلوم الكنسية</b><span>كنيسة رئيس الملائكة الجليل ميخائيل ببهتيم • ٢٠٢٦ - ٢٠٢٧</span></div></header>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const sb=supabase.createClient("https://jwlyyttjwpqivqvnxiip.supabase.co","sb_publishable_Xc_oC8XMmnzko4OMgo7lhQ_EuFSPytz");
+const $=s=>document.querySelector(s),app=$("#app");
+let role=null,tab="students";
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mail=u=>u.includes("@")?u.trim():u.trim().toLowerCase()+"@church.app";
+
+async function init(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)return login();
+  const {data}=await sb.from("profiles").select("role").eq("id",session.user.id).single();
+  role=data?.role;
+  role==="admin"?admin():student();
+}
+function login(msg=""){
+  app.innerHTML=`<div class="card"><b>تسجيل الدخول</b><input id="u" placeholder="اسم المستخدم" autocomplete="username"><input id="p" type="password" placeholder="كلمة المرور" autocomplete="current-password">
+  <button id="go">دخول</button><button class="s" id="su">إنشاء حساب الأدمن (أول مرة فقط)</button><div class="m">${esc(msg)}</div></div>`;
+  $("#go").onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:mail($("#u").value),password:$("#p").value});error?login("بيانات الدخول غير صحيحة"):init()};
+  $("#su").onclick=async()=>{const {error}=await sb.auth.signUp({email:mail($("#u").value),password:$("#p").value});error?login(error.message):login("تم إنشاء الحساب، سجلي الدخول الآن")};
+}
+function shell(body){
+  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
+  document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;admin()});
+  $("#out").onclick=async()=>{await sb.auth.signOut();login()};
+}
+async function admin(){tab=="batches"?batches():students()}
+
+async function batches(){
+  const {data=[]}=await sb.from("batches").select("*").order("entry_year");
+  shell(`<div class="card"><b>دفعة جديدة</b><input id="bn" placeholder="اسم الدفعة (مثال: دفعة 2026)"><input id="by" type="number" placeholder="سنة الدخول" value="${new Date().getFullYear()}">
+  <select id="bd"><option value="3">أولى ثانوي (3 سنوات)</option><option value="2">تانية ثانوي (سنتين)</option><option value="1">تالتة ثانوي (سنة)</option></select><button id="addb" class="g">حفظ</button></div>
+  ${data.map(b=>`<div class="card row"><span>${esc(b.name)}</span><span class="m">دخلت ${b.entry_year} • تتخرج ${b.entry_year+b.duration_years}</span></div>`).join("")}`);
+  $("#addb").onclick=async()=>{await sb.from("batches").insert({name:$("#bn").value,entry_year:+$("#by").value,duration_years:+$("#bd").value});batches()};
+}
+
+async function students(){
+  const [{data:st=[]},{data:bs=[]}]=await Promise.all([sb.from("students").select("*,batches(name)").order("full_name"),sb.from("batches").select("*")]);
+  shell(`<div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة"><input id="nid" inputmode="numeric" maxlength="14" placeholder="الرقم القومي">
+  <div class="m">تاريخ الميلاد</div><input id="bd" type="date"><input id="cf" placeholder="أب الاعتراف"><input id="ch" placeholder="كنيسته"><input id="ad" placeholder="العنوان">
+  <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
+  ${st.map(s=>`<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batches?.name)} • ${esc(s.code)}</div></div><button class="s" style="width:auto" data-id="${s.id}">كارت</button></div>`).join("")}`);
+  $("#adds").onclick=async()=>{
+    if(!$("#n").value||!$("#bt").value)return alert("الاسم والدفعة مطلوبين");
+    const {error}=await sb.from("students").insert({full_name:$("#n").value,birth_date:$("#bd").value||null,address:$("#ad").value,national_id:$("#nid").value||null,confession_father:$("#cf").value,church:$("#ch").value,phones:$("#ph").value.split(/[,،]/).map(x=>x.trim()).filter(Boolean),batch_id:+$("#bt").value});
+    error?alert(error.message):students()};
+  document.querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>idcard(st.find(s=>s.id==b.dataset.id)));
+}
+function cardHtml(s){return `<div class="idc"><img src="logo.png" alt=""><div class="m">مدرسة القديس أثناسيوس للعلوم الكنسية</div><h3>${esc(s.full_name)}</h3><div class="m">${esc(s.batches?.name)}</div><div id="qr" style="display:inline-block;margin:12px;background:#fff;padding:8px"></div><div class="n">${esc(s.code)}</div></div>`}
+function idcard(s){
+  app.innerHTML=`<div class="card">${cardHtml(s)}</div><button onclick="window.print()" class="noprint">طباعة</button><button class="s noprint" id="bk">رجوع</button>`;
+  new QRCode($("#qr"),{text:s.code,width:180,height:180});
+  $("#bk").onclick=admin;
+}
+async function student(){
+  const {data:me}=await sb.from("students").select("*,batches(name)").maybeSingle();
+  app.innerHTML=`<div class="card">${me?cardHtml(me):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div><button class="s" id="out">خروج</button>`;
+  if(me)new QRCode($("#qr"),{text:me.code,width:180,height:180});
+  $("#out").onclick=async()=>{await sb.auth.signOut();login()};
+}
+init();
+</script>
+</body>
+</html>
