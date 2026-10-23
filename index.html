@@ -57,9 +57,16 @@ function login(msg=""){
   $("#su").onclick=async()=>{const {error}=await sb.auth.signUp({email:mail($("#u").value),password:$("#p").value});error?login(error.message):login("تم إنشاء الحساب، سجلي الدخول الآن")};
 }
 function shell(body){
-  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
+  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="s" id="pw" style="flex:.8">كلمة المرور</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
   document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;admin()});
   $("#out").onclick=async()=>{await sb.auth.signOut();login()};
+  $("#pw").onclick=changePw;
+}
+function changePw(){
+  app.innerHTML=`<div class="card"><b>تغيير كلمة المرور</b><input id="np" type="password" placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)" autocomplete="new-password"><input id="np2" type="password" placeholder="أعيدي كتابتها" autocomplete="new-password"><button id="sp" class="g">حفظ</button><button class="s" id="cx">رجوع</button><div class="m" id="pm"></div></div>`;
+  $("#cx").onclick=init;
+  $("#sp").onclick=async()=>{const a=$("#np").value;if(a.length<8)return $("#pm").textContent="لازم 8 أحرف على الأقل";if(a!==$("#np2").value)return $("#pm").textContent="الكلمتين مش متطابقتين";
+    const {error}=await sb.auth.updateUser({password:a});$("#pm").textContent=error?error.message:"تم تغيير كلمة المرور ✔"};
 }
 async function admin(){tab=="batches"?batches():students()}
 
@@ -91,7 +98,8 @@ function idcard(s){
 }
 async function student(){
   const {data:me}=await sb.from("students").select("*,batches(name)").maybeSingle();
-  app.innerHTML=`<div class="card">${me?cardHtml(me):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div><button class="s" id="out">خروج</button>`;
+  app.innerHTML=`<div class="card">${me?cardHtml(me):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div><button class="s" id="pw">تغيير كلمة المرور</button><button class="s" id="out">خروج</button>`;
+  $("#pw").onclick=changePw;
   if(me)new QRCode($("#qr"),{text:me.code,width:180,height:180});
   $("#out").onclick=async()=>{await sb.auth.signOut();login()};
 }
