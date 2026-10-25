@@ -8,19 +8,25 @@
 <link rel="apple-touch-icon" href="logo.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>مدرسة القديس أثناسيوس للعلوم الكنسية</title>
+<title>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</title>
 <link rel="icon" href="logo.png">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
-:root{--navy:#1b2a5c;--gold:#e8b93c;--maroon:#7a1f2b;--cream:#f7f0e1;--bg:#fbf7ee;--c:#fff;--t:#23233a;--m:#777;--b:#e4dac4}
-@media (prefers-color-scheme:dark){:root{--bg:#14172a;--c:#1f2340;--t:#f1ead8;--m:#b3aa94;--b:#383d63;--cream:#1f2340}}
+:root{--navy:#1b2a5c;--gold:#e8b93c;--maroon:#7a1f2b;--cream:#f7f0e1;--bg:#fbf7ee;--c:#fff;--t:#23233a;--m:#777;--b:#e4dac4;--ca:rgba(255,255,255,.9)}
+@media (prefers-color-scheme:dark){:root{--bg:#14172a;--c:#1f2340;--t:#f1ead8;--m:#b3aa94;--b:#383d63;--cream:#1f2340;--ca:rgba(31,35,64,.88)}}
 *{box-sizing:border-box}
+body::before,body::after{content:"";position:fixed;left:0;right:0;pointer-events:none;z-index:-1;background-repeat:no-repeat}
+body::before{top:0;height:55vh;background-image:url(bg-candles.webp);background-size:cover;background-position:center;opacity:.10;-webkit-mask-image:linear-gradient(#000 35%,transparent);mask-image:linear-gradient(#000 35%,transparent)}
+body::after{bottom:0;height:100vh;background-image:url(bg-saint.webp);background-size:contain;background-position:center bottom;opacity:.09;-webkit-mask-image:radial-gradient(ellipse 60% 50% at 50% 42%,#000 35%,transparent 100%);mask-image:radial-gradient(ellipse 60% 50% at 50% 42%,#000 35%,transparent 100%)}
+@media (prefers-color-scheme:dark){body::before{opacity:.17}body::after{opacity:.14}}
+@media print{body::before,body::after{display:none}}
+
 body{margin:0;font-family:Cairo,system-ui,Tahoma,sans-serif;background:var(--bg);color:var(--t)}
 header{background:var(--navy);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:4px solid var(--gold)}
-header img{width:44px;height:52px;object-fit:contain}
+header img{width:72px;height:72px;object-fit:contain}
 header b{display:block;font-size:1.05em;font-weight:900}header span{font-size:.75em;color:var(--gold)}
 main{max-width:640px;margin:auto;padding:12px}
-.card{background:var(--c);border:1px solid var(--b);border-radius:14px;padding:14px;margin:10px 0}
+.card{background:var(--ca);border:1px solid var(--b);border-radius:14px;padding:14px;margin:10px 0}
 input,select,button{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%;margin:4px 0}
 button{background:var(--maroon);color:#fff;border:0;cursor:pointer;font-weight:700}
 button.s{background:transparent;color:var(--maroon);border:1px solid var(--maroon)}
@@ -39,7 +45,7 @@ nav button.on{background:var(--navy)}
 .pa.sheet{display:grid;grid-template-columns:repeat(auto-fill,85.6mm);gap:4mm;justify-content:center}
 .id,.slip{width:85.6mm;height:54mm;border-radius:3mm;overflow:hidden;background:#fbf7ee;color:#23233a;border:.4mm solid #e8b93c;display:flex;flex-direction:column;box-shadow:0 1px 6px #0003;break-inside:avoid;font-family:Cairo,Tahoma,sans-serif;direction:rtl}
 .ih{background:#1b2a5c;color:#fff;height:11mm;display:flex;align-items:center;gap:2mm;padding:0 2.5mm;border-bottom:.9mm solid #e8b93c;flex:none}
-.ih img{height:8.4mm;width:auto}.ih b{display:block;font-size:2.9mm;line-height:1.15;font-weight:900}.ih span{font-size:2mm;color:#e8b93c}
+.ih img{height:9.6mm;width:auto}.ih b{display:block;font-size:2.55mm;line-height:1.2;font-weight:900}.ih span{font-size:2mm;color:#e8b93c}
 .ib{flex:1;display:flex;align-items:center;gap:2.5mm;padding:1.5mm 3mm}
 .ph{width:22mm;height:29mm;flex:none;border:.5mm solid #7a1f2b;border-radius:1.5mm;overflow:hidden;background:#e4dac4;display:flex;align-items:center;justify-content:center;font-size:9mm}
 .ph img{width:100%;height:100%;object-fit:cover}
@@ -65,7 +71,7 @@ nav button.on{background:var(--navy)}
 </style>
 </head>
 <body>
-<header><img src="logo.png" alt=""><div><b>مدرسة القديس أثناسيوس للعلوم الكنسية</b><span>كنيسة رئيس الملائكة الجليل ميخائيل ببهتيم • ٢٠٢٦ - ٢٠٢٧</span></div></header>
+<header><img src="logo.png" alt=""><div><b>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</b><span>كنيسة رئيس الملائكة الجليل ميخائيل ببهتيم</span></div></header>
 <main id="app"></main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -120,7 +126,7 @@ async function ensureSeed(){
 async function login(msg=""){
   let first=true;
   try{first=!(await getDoc(doc(db,"settings","adminlock"))).exists()}catch(e){}
-  app.innerHTML=`<div class="card"><b>تسجيل الدخول</b><input id="u" placeholder="اسم المستخدم" autocomplete="username"><input id="p" type="password" placeholder="كلمة المرور" autocomplete="current-password">
+  app.innerHTML=`<div class="card"><div style="text-align:center"><img src="logo.png" alt="" style="width:120px;height:120px"></div><b>تسجيل الدخول</b><input id="u" placeholder="اسم المستخدم" autocomplete="username"><input id="p" type="password" placeholder="كلمة المرور" autocomplete="current-password">
   <button id="go">دخول</button>${first?'<button class="s" id="su">إنشاء حساب الأدمن (أول مرة فقط)</button>':""}<div class="m" id="lm">${esc(msg)}</div></div>`;
   $("#go").onclick=async()=>{
     try{await signInWithEmailAndPassword(auth,mail($("#u").value),$("#p").value)}
@@ -234,8 +240,12 @@ async function reports(){
 /* ---------- الدفعات ---------- */
 async function batches(){
   const data=(await list(col("batches"))).sort((a,b)=>a.entry_year-b.entry_year);
-  shell(`<div class="card"><b>دفعة جديدة</b><input id="bn" placeholder="اسم الدفعة (مثال: دفعة 2026)"><input id="by" type="number" placeholder="سنة الدخول" value="${new Date().getFullYear()}">
-  <select id="bd"><option value="3">أولى ثانوي (3 سنوات)</option><option value="2">تانية ثانوي (سنتين)</option><option value="1">تالتة ثانوي (سنة)</option></select><button id="addb" class="g">حفظ</button></div>
+  shell(`<div class="card"><b>دفعة جديدة</b>
+  <div class="m">اسم الدفعة (أي اسم يعرّفك بيها)</div><input id="bn" placeholder="مثال: دفعة تخرج 2029">
+  <div class="m">سنة بداية الدراسة (السنة اللي بدأوا فيها الكورس)</div><input id="by" type="number" value="${Y}">
+  <div class="m">كانوا في أنهي سنة لما بدأوا؟ (ده بيحدد هيكملوا كام سنة)</div>
+  <select id="bd"><option value="3">أولى ثانوي (هيكملوا 3 سنوات)</option><option value="2">تانية ثانوي (هيكملوا سنتين)</option><option value="1">تالتة ثانوي (هيكملوا سنة واحدة)</option></select>
+  <button id="addb" class="g">حفظ</button></div>
   ${data.map(b=>`<div class="card row"><span>${esc(b.name)}</span><span class="m">دخلت ${b.entry_year} • تتخرج ${b.entry_year+b.duration_years}</span></div>`).join("")}`);
   $("#addb").onclick=async()=>{
     if(!$("#bn").value)return alert("اكتبي اسم الدفعة");
@@ -261,10 +271,10 @@ function printEl(id,size){
   addEventListener("afterprint",done);window.print();
 }
 function cardHtml(s){
-  return `<div class="id"><div class="ih"><img src="logo.png" alt=""><div><b>مدرسة القديس أثناسيوس للعلوم الكنسية</b><span>كنيسة الملاك ميخائيل ببهتيم</span></div></div>
+  return `<div class="id"><div class="ih"><img src="logo.png" alt=""><div><b>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</b><span>كنيسة الملاك ميخائيل ببهتيم</span></div></div>
   <div class="ib"><div class="ph">${s.photo?`<img src="${esc(s.photo)}" alt="">`:"👤"}</div>
   <div class="in"><h4>${esc(s.full_name)}</h4><p>${esc(s.batch_name)}</p><p class="cd">${esc(s.code)}</p></div>
-  <div class="qr" data-c="${esc(s.code)}"></div></div><div class="if">بطاقة مخدوم • ${Y} - ${Y+1}</div></div>`;
+  <div class="qr" data-c="${esc(s.code)}"></div></div><div class="if">بطاقة مخدوم</div></div>`;
 }
 function slipHtml(s){
   const url=location.origin+location.pathname.replace(/index\.html$/,"");
@@ -275,7 +285,7 @@ function slipHtml(s){
 async function students(){
   const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
   st.sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"));
-  shell(`<div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة"><input id="nid" inputmode="numeric" maxlength="14" placeholder="الرقم القومي">
+  shell(`<div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة">
   <div class="m">تاريخ الميلاد</div><input id="bd" type="date"><input id="cf" placeholder="أب الاعتراف"><input id="ch" placeholder="كنيسته"><input id="ad" placeholder="العنوان">
   <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
   <button class="s" id="allc">طباعة كل الكروت (A4)</button>
@@ -296,7 +306,7 @@ async function students(){
       if(!uid)throw new Error("تعذر إنشاء اسم مستخدم، حاولي مرة أخرى");
       await signOut(a2);
       const batch=bs.find(b=>b.id==$("#bt").value);
-      const s={full_name:$("#n").value,birth_date:$("#bd").value||"",address:$("#ad").value,national_id:$("#nid").value||"",confession_father:$("#cf").value,church:$("#ch").value,phones:$("#ph").value.split(/[,،]/).map(x=>x.trim()).filter(Boolean),batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo,created:serverTimestamp()};
+      const s={full_name:$("#n").value,birth_date:$("#bd").value||"",address:$("#ad").value,confession_father:$("#cf").value,church:$("#ch").value,phones:$("#ph").value.split(/[,،]/).map(x=>x.trim()).filter(Boolean),batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo,created:serverTimestamp()};
       const b=writeBatch(db);
       b.set(doc(db,"students",code),s);
       b.set(doc(db,"users",uid),{role:"student",studentId:code,name:s.full_name});
