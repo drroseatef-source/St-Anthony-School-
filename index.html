@@ -44,12 +44,12 @@ nav button.on{background:var(--navy)}
 .pa{display:flex;justify-content:center;margin:10px 0}
 .pa.sheet{display:grid;grid-template-columns:repeat(auto-fill,85.6mm);gap:4mm;justify-content:center}
 .id,.slip{width:85.6mm;height:54mm;border-radius:3mm;overflow:hidden;background:#fbf7ee;color:#23233a;border:.4mm solid #e8b93c;display:flex;flex-direction:column;box-shadow:0 1px 6px #0003;break-inside:avoid;font-family:Cairo,Tahoma,sans-serif;direction:rtl}
-.ih{background:#1b2a5c;color:#fff;height:11mm;display:flex;align-items:center;gap:2mm;padding:0 2.5mm;border-bottom:.9mm solid #e8b93c;flex:none}
-.ih img{height:9.6mm;width:auto}.ih b{display:block;font-size:2.55mm;line-height:1.2;font-weight:900}.ih span{font-size:2mm;color:#e8b93c}
+.ih{background:#1b2a5c;color:#fff;min-height:14mm;display:flex;align-items:center;gap:2mm;padding:1.4mm 2.5mm;border-bottom:.9mm solid #e8b93c;flex:none}
+.ih img{height:10.5mm;width:auto}.ih b{display:block;font-size:2.7mm;line-height:1.4;font-weight:900}.ih span{display:block;font-size:2.2mm;line-height:1.5;color:#e8b93c}.slip .ih span{font-size:3.3mm;font-weight:700}
 .ib{flex:1;display:flex;align-items:center;gap:2.5mm;padding:1.5mm 3mm}
 .ph{width:22mm;height:29mm;flex:none;border:.5mm solid #7a1f2b;border-radius:1.5mm;overflow:hidden;background:#e4dac4;display:flex;align-items:center;justify-content:center;font-size:9mm}
 .ph img{width:100%;height:100%;object-fit:cover}
-.in{flex:1;min-width:0;text-align:center}.in h4{margin:0;font-size:3.7mm;line-height:1.3;color:#1b2a5c;font-weight:900}
+.in{flex:1;min-width:0;text-align:center}.in h4{margin:0;font-size:4.5mm;line-height:1.4;color:#1b2a5c;font-weight:900}
 .in p{margin:.8mm 0 0;font-size:2.6mm;color:#7a1f2b;font-weight:700}.in .cd{font-size:2.8mm;letter-spacing:.3mm;direction:ltr;color:#23233a}
 .qr{width:23mm;height:23mm;flex:none;background:#fff;padding:.8mm;border:.3mm solid #e4dac4}.qr img{width:100%;height:100%;display:block}.qr canvas{display:none}
 .if{background:#7a1f2b;color:#fff;font-size:2.1mm;text-align:center;height:4mm;line-height:4mm;flex:none}
@@ -276,6 +276,7 @@ async function scanner(lec,title){
       const sd=await getDoc(doc(db,"students",code));
       if(!sd.exists()){$("#msg").innerHTML='<span class="w">كود غير معروف</span>';return}
       const s=sd.data(),aid=`${lec.id}_${code}`;
+      if(s.status==="withdrawn"){$("#msg").innerHTML=`<span class="w">${esc(s.full_name)} منسحب من الكورس</span>`;return}
       if((await getDoc(doc(db,"attendance",aid))).exists()){$("#msg").innerHTML=`<span class="w">${esc(s.full_name)} مسجل قبل كده</span>`;return}
       await setDoc(doc(db,"attendance",aid),{lecture_id:lec.id,student_id:code,student_name:s.full_name,subject_id:lec.subject_id,year:Y,week_no:lec.week_no,ts:serverTimestamp()});
       names.push(s.full_name);draw();navigator.vibrate&&navigator.vibrate(120);$("#msg").innerHTML=`<span class="ok">✔ ${esc(s.full_name)}</span>`;
@@ -291,7 +292,7 @@ async function scanner(lec,title){
 async function reports(){
   const [subs,lecs,atts,sts,bts]=await Promise.all([list(col("subjects")),list(query(col("lectures"),where("year","==",Y))),list(query(col("attendance"),where("year","==",Y))),list(col("students")),list(col("batches"))]);
   const act=new Set(bts.filter(b=>b.entry_year<=Y&&Y<b.entry_year+b.duration_years).map(b=>b.id));
-  const groups=sts.filter(s=>act.has(s.batch_id)).sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"))
+  const groups=sts.filter(s=>act.has(s.batch_id)&&isActive(s)).sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"))
     .map(s=>({name:s.full_name,batch:s.batch_name,items:calc(subs,lecs,atts.filter(a=>a.student_id==s.id))}));
   const wn=groups.filter(g=>g.items.some(i=>i.warning)).length;
   shell(`<div class="card"><b>تقرير الحضور ${Y}-${Y+1}</b><div class="m">درجة الحضور من 25 • تحت 70% = إنذار ⚠ • عدد المنذرين: ${wn}</div></div>${attBlock(groups)}`);
@@ -334,18 +335,17 @@ function cardHtml(s){
   return `<div class="id"><div class="ih"><img src="logo.png" alt=""><div><b>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</b><span>كنيسة الملاك ميخائيل ببهتيم</span></div></div>
   <div class="ib"><div class="ph">${s.photo?`<img src="${esc(s.photo)}" alt="">`:"👤"}</div>
   <div class="in"><h4>${esc(s.full_name)}</h4><p>${esc(s.batch_name)}</p><p class="cd">${esc(s.code)}</p></div>
-  <div class="qr" data-c="${esc(s.code)}"></div></div><div class="if">بطاقة مخدوم</div></div>`;
+  <div class="qr" data-c="${esc(s.code)}"></div></div><div class="if">بطاقة مخدوم${s.seq?` • رقم ${String(s.seq).padStart(3,"0")}`:""}</div></div>`;
 }
 function slipHtml(s){
-  const url=location.origin+location.pathname.replace(/index\.html$/,"");
   return `<div class="slip"><div class="ih"><img src="logo.png" alt=""><div><b>بيانات الدخول للتطبيق</b><span>${esc(s.full_name)}</span></div></div>
   <div class="sb"><div><span>اسم المستخدم</span><code>${esc(s.username)}</code></div><div><span>كلمة المرور</span>${s.init_pw?`<code>${esc(s.init_pw)}</code>`:'<span class="m">غيّرها المخدوم</span>'}</div>
-  <small>${esc(url)}<br>يُفضّل تغيير كلمة المرور بعد أول دخول</small></div></div>`;
+  <small>يُفضّل تغيير كلمة المرور بعد أول دخول</small></div></div>`;
 }
 const arSort=(a,b)=>a.full_name.localeCompare(b.full_name,"ar");
 
 /* إنشاء مخدوم (مشترك بين النموذج والاستيراد) */
-async function createStudent(f,batch){
+async function createStudent(f,batch,seq){
   let code;do{code=genCode()}while((await getDoc(doc(db,"students",code))).exists());
   const a2=secondAuth(),pw=genPw();let uid=null,user;
   for(let i=0;i<5&&!uid;i++){
@@ -355,7 +355,7 @@ async function createStudent(f,batch){
   }
   if(!uid)throw new Error("تعذر إنشاء اسم مستخدم، حاولي مرة أخرى");
   await signOut(a2);
-  const s={full_name:f.full_name,birth_date:f.birth_date||"",address:f.address||"",confession_father:f.confession_father||"",church:f.church||"",phones:f.phones||[],batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo:f.photo||"",created:serverTimestamp()};
+  const s={full_name:f.full_name,birth_date:f.birth_date||"",address:f.address||"",confession_father:f.confession_father||"",church:f.church||"",phones:f.phones||[],batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo:f.photo||"",seq:seq||0,printed:false,status:"active",created:serverTimestamp()};
   const b=writeBatch(db);
   b.set(doc(db,"students",code),s);
   b.set(doc(db,"users",uid),{role:"student",studentId:code,name:s.full_name});
@@ -363,25 +363,42 @@ async function createStudent(f,batch){
   return {...s,id:code};
 }
 
+const isActive=s=>s.status!=="withdrawn";
+let showW=false;
+async function nextSeq(){const all=await list(col("students"));return all.reduce((m,s)=>Math.max(m,s.seq||0),0)+1}
+async function ensureSeq(st){
+  const miss=st.filter(s=>!s.seq);if(!miss.length)return;
+  let n=st.reduce((m,s)=>Math.max(m,s.seq||0),0);
+  const ms=s=>s.created&&s.created.toMillis?s.created.toMillis():(+s.created||0);
+  miss.sort((x,y)=>ms(x)-ms(y)||arSort(x,y));
+  const b=writeBatch(db);
+  miss.forEach(s=>{s.seq=++n;b.set(doc(db,"students",s.id),{seq:s.seq},{merge:true})});
+  await b.commit();
+}
 async function students(){
   const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
-  st.sort(arSort);
+  try{await ensureSeq(st)}catch(e){}
+  st.sort((a,b)=>(a.seq||0)-(b.seq||0)||arSort(a,b));
+  const act=st.filter(isActive),wd=st.filter(s=>!isActive(s));
   shell(`<div class="row" style="gap:6px"><button class="s" id="imp">استيراد من Excel</button><button class="s" id="rvw">قائمة المراجعة</button></div>
   <div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة">
   <div class="m">تاريخ الميلاد</div><input id="bd" type="date"><input id="cf" placeholder="أب الاعتراف"><input id="ch" placeholder="كنيسته"><input id="ad" placeholder="العنوان">
   <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
-  <button class="s" id="allc">طباعة كل الكروت وأوراق الدخول</button>
-  ${st.map(s=>{const mi=missingOf(s);return `<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batch_name)} • ${esc(s.code)}</div>${mi.length?`<div class="w" style="font-size:.8em">⚠ ناقص: ${esc(mi.join("، "))}</div>`:""}</div><button class="s" style="width:auto" data-id="${esc(s.id)}">كارت + دخول</button></div>`}).join("")}`);
+  <button class="s" id="allc">طباعة الكروت وأوراق الدخول</button>
+  <div class="m">المخدومين النشطين: ${act.length}</div>
+  ${(showW?[...act,...wd]:act).map(s=>{const mi=missingOf(s);return `<div class="card row" style="${isActive(s)?"":"opacity:.6"}"><div>${s.seq?`<span class="m">#${String(s.seq).padStart(3,"0")}</span> `:""}${esc(s.full_name)}${isActive(s)?"":' <span class="w">(منسحب)</span>'}<div class="m">${esc(s.batch_name)} • ${esc(s.code)}</div>${mi.length&&isActive(s)?`<div class="w" style="font-size:.8em">⚠ ناقص: ${esc(mi.join("، "))}</div>`:""}</div><button class="s" style="width:auto" data-id="${esc(s.id)}">كارت + دخول</button></div>`}).join("")}
+  ${wd.length?`<button class="s" id="tw">${showW?"إخفاء":"عرض"} المنسحبين (${wd.length})</button>`:""}`);
   $("#allc").onclick=()=>allCards();
   $("#imp").onclick=importStudents;
   $("#rvw").onclick=reviewList;
+  if($("#tw"))$("#tw").onclick=()=>{showW=!showW;students()};
   $("#adds").onclick=async()=>{
     if(!$("#n").value||!$("#bt").value)return alert("الاسم والدفعة مطلوبين");
     const btn=$("#adds");btn.disabled=true;btn.textContent="جاري الحفظ...";
     try{
       const photo=$("#pic").files[0]?await shrink($("#pic").files[0]):"";
       const batch=bs.find(b=>b.id==$("#bt").value);
-      const s=await createStudent({full_name:clean($("#n").value),birth_date:$("#bd").value||"",address:clean($("#ad").value),confession_father:clean($("#cf").value),church:clean($("#ch").value),phones:$("#ph").value.split(/[,،]/).map(normPhone).filter(Boolean),photo},batch);
+      const s=await createStudent({full_name:clean($("#n").value),birth_date:$("#bd").value||"",address:clean($("#ad").value),confession_father:clean($("#cf").value),church:clean($("#ch").value),phones:$("#ph").value.split(/[,،]/).map(normPhone).filter(Boolean),photo},batch,await nextSeq());
       idcard(s);
     }catch(e){alert(e.message||e);btn.disabled=false;btn.textContent="حفظ وإنشاء الـ ID"}
   };
@@ -425,9 +442,10 @@ async function previewImport(rows){
       if(!b){const nb={name:`دفعة تخرج ${Y+dur}`,entry_year:Y,duration_years:dur};const ref=await addDoc(col("batches"),nb);b={id:ref.id,...nb};bs.push(b)}
       return cache[dur]=b;
     };
+    let seq=await nextSeq();
     for(let i=0;i<ok.length;i++){
       $("#ip").textContent=`جاري إنشاء ${i+1} من ${ok.length}...`;
-      try{made.push(await createStudent(ok[i],await batchFor(ok[i].dur)))}
+      try{made.push(await createStudent(ok[i],await batchFor(ok[i].dur),seq++))}
       catch(e){fails.push(ok[i].full_name+": "+(e.message||e))}
     }
     app.innerHTML=`<div class="card"><b>تم استيراد ${made.length} مخدوم</b>${fails.length?`<div class="w">فشل ${fails.length}:<br>${fails.map(esc).join("<br>")}</div>`:""}<div class="m">الخطوة الجاية: اطبعي الكروت وأوراق الدخول، وضيفي الصور من شاشة التعديل.</div></div><button class="g" id="g1">طباعة الكروت وأوراق الدخول</button><button class="s" id="bk">رجوع</button>`;
@@ -437,7 +455,7 @@ async function previewImport(rows){
 
 /* قائمة المراجعة (الناقص) */
 async function reviewList(){
-  const st=(await list(col("students"))).sort(arSort);
+  const st=(await list(col("students"))).filter(isActive).sort(arSort);
   const rows=st.map(s=>({s,m:missingOf(s)})).filter(x=>x.m.length);
   app.innerHTML=`<div class="m noprint">${rows.length} مخدوم محتاجين مراجعة</div><button class="g noprint" id="pr">طباعة (A4)</button>
   <div class="pa" id="rv"><table class="rvt"><tr><th>#</th><th>الاسم</th><th>الدفعة</th><th>المطلوب</th></tr>${rows.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.s.full_name)}</td><td>${esc(x.s.batch_name)}</td><td>${esc(x.m.join("، "))}</td></tr>`).join("")}</table></div><button class="s noprint" id="bk">رجوع</button>`;
@@ -470,27 +488,78 @@ async function editStudent(s){
   };
 }
 
+async function setStatus(s,status){
+  const b=writeBatch(db);
+  b.set(doc(db,"students",s.id),status=="withdrawn"?{status:"withdrawn",withdrawn_at:Date.now()}:{status:"active",withdrawn_at:0},{merge:true});
+  if(s.user_id){
+    if(status=="withdrawn")b.delete(doc(db,"users",s.user_id));
+    else b.set(doc(db,"users",s.user_id),{role:"student",studentId:s.id,name:s.full_name});
+  }
+  await b.commit();
+  idcard({...s,status});
+}
+async function deleteStudent(s){
+  if(!confirm(`حذف ${s.full_name} نهائيًا مع كل حضوره ونتائجه؟ مفيش رجوع.`))return;
+  const [att,qr]=await Promise.all([list(query(col("attendance"),where("student_id","==",s.id))),list(query(col("quiz_results"),where("student_id","==",s.id)))]);
+  const refs=[...att.map(a=>doc(db,"attendance",a.id)),...qr.map(a=>doc(db,"quiz_results",a.id)),doc(db,"students",s.id)];
+  if(s.user_id)refs.push(doc(db,"users",s.user_id));
+  for(let i=0;i<refs.length;i+=400){const b=writeBatch(db);refs.slice(i,i+400).forEach(r=>b.delete(r));await b.commit()}
+  admin();
+}
 function idcard(s){
-  app.innerHTML=`<div class="m noprint" style="text-align:center">كارت الـ ID (مقاس 85.6 × 54 مم)</div><div class="pa" id="pid">${cardHtml(s)}</div>
+  const w=!isActive(s);
+  app.innerHTML=`${w?'<div class="card w noprint">⚠ مخدوم منسحب: مش بيظهر في الحضور ولا التقارير ومش بيقدر يدخل التطبيق</div>':""}<div class="m noprint" style="text-align:center">كارت الـ ID (مقاس 85.6 × 54 مم)</div><div class="pa" id="pid">${cardHtml(s)}</div>
   <button class="g noprint" id="p1">طباعة الكارت</button>
   ${s.username?`<div class="m noprint" style="text-align:center;margin-top:14px">بيانات الدخول (ورقة منفصلة عن الكارت)</div><div class="pa" id="pcr">${slipHtml(s)}</div><button class="g noprint" id="p2">طباعة بيانات الدخول</button>`:""}
-  <button class="s noprint" id="ed">تعديل البيانات / الصورة</button><button class="s noprint" id="bk">رجوع</button>`;
+  <button class="s noprint" id="ed">تعديل البيانات / الصورة</button>
+  ${w?'<button class="g noprint" id="rs">استرجاع للدفعة</button><button class="s noprint" id="dl">حذف نهائي</button>':'<button class="s noprint" id="wd">تسجيل انسحاب</button>'}
+  <button class="s noprint" id="bk">رجوع</button>`;
   renderQR();
   $("#p1").onclick=()=>printEl("pid","85.6mm 54mm");
   if($("#p2"))$("#p2").onclick=()=>printEl("pcr","85.6mm 54mm");
   $("#ed").onclick=()=>editStudent(s);
+  if($("#wd"))$("#wd").onclick=()=>{if(confirm(`تسجيل انسحاب ${s.full_name}؟ بياناته وحضوره بيفضلوا محفوظين وتقدري ترجعيه في أي وقت.`))setStatus(s,"withdrawn")};
+  if($("#rs"))$("#rs").onclick=()=>setStatus(s,"active");
+  if($("#dl"))$("#dl").onclick=()=>deleteStudent(s);
   $("#bk").onclick=admin;
 }
-async function allCards(bid=""){
-  const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
-  const l=st.filter(s=>!bid||s.batch_id==bid).sort(arSort);
-  app.innerHTML=`<select id="fb" class="noprint"><option value="">كل الدفعات</option>${bs.map(b=>`<option value="${esc(b.id)}" ${b.id==bid?"selected":""}>${esc(b.name)}</option>`).join("")}</select>
-  <div class="m noprint">${l.length} مخدوم</div><button class="g noprint" id="pa">طباعة الكروت (A4)</button><button class="g noprint" id="pb">طباعة أوراق الدخول (A4)</button>
-  <div class="pa sheet" id="sh">${l.map(cardHtml).join("")}</div><div class="pa sheet" id="sh2" style="display:none">${l.map(slipHtml).join("")}</div><button class="s noprint" id="bk">رجوع</button>`;
-  renderQR();
-  $("#fb").onchange=e=>allCards(e.target.value);
-  $("#pa").onclick=()=>printEl("sh","A4");
-  $("#pb").onclick=()=>printEl("sh2","A4");
+async function allCards(){
+  const [all,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
+  const st=all.filter(isActive).sort((a,b)=>(a.seq||0)-(b.seq||0)||arSort(a,b));
+  const sel=new Set();let bid="";
+  app.innerHTML=`<div class="card"><b>اختيار الكروت للطباعة</b>
+  <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><button class="s" id="sa">تحديد الكل</button><button class="s" id="sn">الجداد (لسه ما اتطبعوش)</button><button class="s" id="sc">مسح التحديد</button></div>
+  <div class="m" style="margin-top:8px">أو حددي بالرقم المتسلسل:</div>
+  <div class="row" style="gap:6px"><input id="r1" type="number" placeholder="من رقم"><input id="r2" type="number" placeholder="إلى رقم"><button class="s" id="sr" style="width:auto">تحديد</button></div>
+  <select id="fb"><option value="">كل الدفعات</option>${bs.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select></div>
+  <div class="card" id="lst"></div><div class="m" id="cnt"></div>
+  <button class="g" id="pa">طباعة الكروت المحددة (A4)</button><button class="g" id="pb">طباعة أوراق الدخول المحددة (A4)</button><button class="s" id="pm">تعليم المحدد كمطبوع</button>
+  <div class="pa sheet" id="sh" style="display:none"></div><div class="pa sheet" id="sh2" style="display:none"></div><button class="s" id="bk">رجوع</button>`;
+  const vis=()=>st.filter(s=>!bid||s.batch_id==bid);
+  const cnt=()=>{$("#cnt").textContent=`المحدد: ${sel.size} من ${st.length}`};
+  const draw=()=>{
+    $("#lst").innerHTML=vis().map(s=>`<label class="opt"><input type="checkbox" data-c="${esc(s.id)}" ${sel.has(s.id)?"checked":""}><span>${s.seq?"#"+String(s.seq).padStart(3,"0")+" • ":""}${esc(s.full_name)} <span class="m">${esc(s.batch_name)}</span> ${s.printed?'<span class="m">✔ اتطبع</span>':'<span class="new">جديد</span>'}</span></label>`).join("")||'<div class="m">مفيش مخدومين</div>';
+    document.querySelectorAll("[data-c]").forEach(c=>c.onchange=()=>{c.checked?sel.add(c.dataset.c):sel.delete(c.dataset.c);cnt()});
+    cnt();
+  };
+  draw();
+  $("#fb").onchange=e=>{bid=e.target.value;draw()};
+  $("#sa").onclick=()=>{vis().forEach(s=>sel.add(s.id));draw()};
+  $("#sn").onclick=()=>{vis().filter(s=>!s.printed).forEach(s=>sel.add(s.id));draw()};
+  $("#sc").onclick=()=>{sel.clear();draw()};
+  $("#sr").onclick=()=>{const a=+$("#r1").value||0,z=+$("#r2").value||1e9;st.filter(s=>s.seq>=a&&s.seq<=z).forEach(s=>sel.add(s.id));draw()};
+  const go=(kind)=>{
+    const l=st.filter(s=>sel.has(s.id));if(!l.length)return alert("حددي مخدوم واحد على الأقل");
+    const el=$(kind=="c"?"#sh":"#sh2");el.innerHTML=l.map(kind=="c"?cardHtml:slipHtml).join("");renderQR();
+    setTimeout(()=>printEl(el.id,"A4"),400);
+  };
+  $("#pa").onclick=()=>go("c");
+  $("#pb").onclick=()=>go("s");
+  $("#pm").onclick=async()=>{
+    const l=st.filter(s=>sel.has(s.id));if(!l.length)return alert("حددي مخدوم واحد على الأقل");
+    const b=writeBatch(db);l.forEach(s=>{s.printed=true;b.set(doc(db,"students",s.id),{printed:true},{merge:true})});
+    await b.commit();sel.clear();draw();
+  };
   $("#bk").onclick=admin;
 }
 
@@ -563,7 +632,7 @@ async function content(){
 async function quizResults(q){
   const [rs,sts,bts]=await Promise.all([list(query(col("quiz_results"),where("quiz_id","==",q.id))),list(col("students")),list(col("batches"))]);
   const act=new Set(bts.filter(b=>b.entry_year<=Y&&Y<b.entry_year+b.duration_years).map(b=>b.id));
-  const rows=sts.filter(s=>act.has(s.batch_id)).sort(arSort).map(s=>({s,r:rs.find(x=>x.student_id==s.id)}));
+  const rows=sts.filter(s=>act.has(s.batch_id)&&isActive(s)).sort(arSort).map(s=>({s,r:rs.find(x=>x.student_id==s.id)}));
   const done=rows.filter(x=>x.r),avg=done.length?fmt(done.reduce((a,x)=>a+x.r.score/x.r.total*100,0)/done.length):0;
   app.innerHTML=`<div class="card"><b>${esc(q.title)}</b><div class="m">${esc(q.subject_name)} • الأسبوع ${q.week_no}</div><div class="m">حلّ ${done.length} من ${rows.length} • المتوسط ${avg}%</div></div>
   ${rows.map(({s,r})=>`<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batch_name)}</div></div><div>${r?`<b>${r.score}/${r.total}</b> <span class="m">${fmt(r.score/r.total*100)}%</span> <button class="s" style="width:auto;padding:4px 8px" data-rm="${esc(r.id)}">إعادة</button>`:'<span class="m">لم يحل</span>'}</div></div>`).join("")}
