@@ -68,6 +68,16 @@ nav button.on{background:var(--navy)}
  body.printing .id,body.printing .slip{box-shadow:none}
  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+textarea{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%;margin:4px 0}
+nav{flex-wrap:wrap}nav button{min-width:76px}
+a{color:var(--maroon);font-weight:700;text-decoration:none}
+@media (prefers-color-scheme:dark){a{color:var(--gold)}}
+.new{background:#c0392b;color:#fff;border-radius:8px;padding:0 8px;font-size:.75em;white-space:nowrap}
+.opt{display:flex;align-items:center;gap:10px;padding:10px 4px;border-top:1px solid var(--b);cursor:pointer}.opt input{width:auto;margin:0;flex:none}
+pre.ex{background:var(--bg);border:1px dashed var(--b);border-radius:10px;padding:8px;margin:4px 0;font:inherit;font-size:.85em;white-space:pre-wrap;direction:rtl}
+.rvt{width:100%;border-collapse:collapse}.rvt th,.rvt td{border:1px solid var(--b);padding:5px 8px;text-align:right;font-size:.85em}
+@media print{.rvt th,.rvt td{color:#000;border-color:#888}}
 </style>
 </head>
 <body>
@@ -78,7 +88,7 @@ nav button.on{background:var(--navy)}
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,updatePassword} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {getFirestore,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,collection,query,where,writeBatch,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getFirestore,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,collection,query,where,writeBatch,serverTimestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyDpsJ0BZ9J9HuOF7PuEELwIN-5T7crqpsk",
@@ -100,6 +110,56 @@ const col=n=>collection(db,n);
 const list=async q=>(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
 const fmt=n=>Math.round(n*10)/10;
 const SUBJ=[["عهد قديم",1],["طقس",1],["عهد جديد",2],["تاريخ كنيسة",2],["عقيدة",3],["لاهوت مقارن",3],["لاهوت دفاعي",4],["قبطي",4]];
+
+/* ---------- أدوات مساعدة (بدون اتصال بالسيرفر) ---------- */
+const ar2en=v=>String(v??"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d));
+const normPhone=v=>{let d=ar2en(v).replace(/[^\d]/g,"");if(d.length==10&&d[0]=="1")d="0"+d;return d};
+const toISO=v=>{
+  if(typeof v==="number"&&v>1000&&v<100000)return new Date(Date.UTC(1899,11,30)+Math.round(v)*864e5).toISOString().slice(0,10);
+  const m=ar2en(v).match(/(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{4})/);
+  if(!m)return "";
+  const d=+m[1],mo=+m[2];if(mo<1||mo>12||d<1||d>31)return "";
+  return `${m[3]}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+};
+const stageDur=t=>{t=String(t??"");return /ثالث/.test(t)?1:/ثاني/.test(t)?2:/[أا]ول/.test(t)?3:null};
+const clean=v=>String(v??"").replace(/\s+/g," ").trim();
+const wordsOf=n=>clean(n).split(" ").filter(Boolean).length;
+function missingOf(s){
+  const m=[];
+  if(wordsOf(s.full_name)<3)m.push("الاسم غير كامل");
+  if(!(s.phones&&s.phones.length))m.push("التليفون");
+  else if(s.phones.some(p=>p.length!=11))m.push("رقم التليفون غير مكتمل");
+  if(!s.address)m.push("العنوان");
+  if(!s.birth_date)m.push("تاريخ الميلاد");
+  if(!s.confession_father)m.push("أب الاعتراف");
+  if(!s.church)m.push("الكنيسة");
+  return m;
+}
+function rowToStudent(r){
+  const g=k=>{const key=Object.keys(r).find(x=>clean(x).replace(/\s*\(.*\)/,"")==k);return key?r[key]:""};
+  const ph=normPhone(g("التليفون"));
+  return {full_name:clean(g("الاسم رباعي")),phones:ph?[ph]:[],birth_date:toISO(g("تاريخ الميلاد")),address:clean(g("العنوان")),confession_father:clean(g("أب الاعتراف")),church:clean(g("الكنيسة")),stage:clean(g("المرحلة"))};
+}
+function parseQuiz(text){
+  const qs=[],errs=[];
+  String(text).replace(/\r/g,"").split(/\n\s*\n/).map(b=>b.trim()).filter(Boolean).forEach((b,i)=>{
+    const lines=b.split("\n").map(x=>x.trim()).filter(Boolean);
+    const q=lines.shift().replace(/^\d+\s*[\.\-\)]\s*/,"");
+    const options=[];let ans=-1,stars=0;
+    lines.forEach(l=>{
+      if(!/^[-•]/.test(l))return;
+      let t=l.replace(/^[-•]\s*/,"").trim();
+      if(/[*✓✔]$/.test(t)){t=t.replace(/\s*[*✓✔]+$/,"").trim();ans=options.length;stars++}
+      if(t)options.push(t);
+    });
+    if(options.length<2)errs.push(`سؤال ${i+1}: لازم اختيارين على الأقل`);
+    else if(stars!=1)errs.push(`سؤال ${i+1}: لازم تحددي إجابة واحدة صح بعلامة *`);
+    else qs.push({q,options,answer:ans});
+  });
+  return {qs,errs};
+}
+const quizToText=qs=>qs.map(q=>q.q+"\n"+q.options.map((o,i)=>"- "+o+(i==q.answer?" *":"")).join("\n")).join("\n\n");
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 
@@ -150,7 +210,7 @@ async function login(msg=""){
   };
 }
 function shell(body){
-  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="${tab=="att"?"on":"s"}" data-t="att">الحضور</button><button class="${tab=="rep"?"on":"s"}" data-t="rep">التقارير</button><button class="s" id="pw" style="flex:.8">كلمة المرور</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
+  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="${tab=="att"?"on":"s"}" data-t="att">الحضور</button><button class="${tab=="content"?"on":"s"}" data-t="content">المحتوى</button><button class="${tab=="rep"?"on":"s"}" data-t="rep">التقارير</button><button class="s" id="pw" style="flex:.8">كلمة المرور</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
   document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;admin()});
   $("#out").onclick=()=>signOut(auth);
   $("#pw").onclick=changePw;
@@ -171,7 +231,7 @@ function changePw(){
     }
   };
 }
-const admin=()=>tab=="batches"?batches():tab=="att"?attendance():tab=="rep"?reports():students();
+const admin=()=>tab=="batches"?batches():tab=="att"?attendance():tab=="content"?content():tab=="rep"?reports():students();
 
 /* ---------- حساب الحضور ---------- */
 function calc(subs,lecs,atts){
@@ -282,63 +342,246 @@ function slipHtml(s){
   <div class="sb"><div><span>اسم المستخدم</span><code>${esc(s.username)}</code></div><div><span>كلمة المرور</span>${s.init_pw?`<code>${esc(s.init_pw)}</code>`:'<span class="m">غيّرها المخدوم</span>'}</div>
   <small>${esc(url)}<br>يُفضّل تغيير كلمة المرور بعد أول دخول</small></div></div>`;
 }
+const arSort=(a,b)=>a.full_name.localeCompare(b.full_name,"ar");
+
+/* إنشاء مخدوم (مشترك بين النموذج والاستيراد) */
+async function createStudent(f,batch){
+  let code;do{code=genCode()}while((await getDoc(doc(db,"students",code))).exists());
+  const a2=secondAuth(),pw=genPw();let uid=null,user;
+  for(let i=0;i<5&&!uid;i++){
+    user=genUser();
+    try{uid=(await createUserWithEmailAndPassword(a2,mail(user),pw)).user.uid}
+    catch(e){if(e.code!=="auth/email-already-in-use")throw e}
+  }
+  if(!uid)throw new Error("تعذر إنشاء اسم مستخدم، حاولي مرة أخرى");
+  await signOut(a2);
+  const s={full_name:f.full_name,birth_date:f.birth_date||"",address:f.address||"",confession_father:f.confession_father||"",church:f.church||"",phones:f.phones||[],batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo:f.photo||"",created:serverTimestamp()};
+  const b=writeBatch(db);
+  b.set(doc(db,"students",code),s);
+  b.set(doc(db,"users",uid),{role:"student",studentId:code,name:s.full_name});
+  await b.commit();
+  return {...s,id:code};
+}
+
 async function students(){
   const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
-  st.sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"));
-  shell(`<div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة">
+  st.sort(arSort);
+  shell(`<div class="row" style="gap:6px"><button class="s" id="imp">استيراد من Excel</button><button class="s" id="rvw">قائمة المراجعة</button></div>
+  <div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة">
   <div class="m">تاريخ الميلاد</div><input id="bd" type="date"><input id="cf" placeholder="أب الاعتراف"><input id="ch" placeholder="كنيسته"><input id="ad" placeholder="العنوان">
-  <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
-  <button class="s" id="allc">طباعة كل الكروت (A4)</button>
-  ${st.map(s=>`<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batch_name)} • ${esc(s.code)}</div></div><button class="s" style="width:auto" data-id="${esc(s.id)}">كارت + دخول</button></div>`).join("")}`);
+  <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
+  <button class="s" id="allc">طباعة كل الكروت وأوراق الدخول</button>
+  ${st.map(s=>{const mi=missingOf(s);return `<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batch_name)} • ${esc(s.code)}</div>${mi.length?`<div class="w" style="font-size:.8em">⚠ ناقص: ${esc(mi.join("، "))}</div>`:""}</div><button class="s" style="width:auto" data-id="${esc(s.id)}">كارت + دخول</button></div>`}).join("")}`);
   $("#allc").onclick=()=>allCards();
+  $("#imp").onclick=importStudents;
+  $("#rvw").onclick=reviewList;
   $("#adds").onclick=async()=>{
     if(!$("#n").value||!$("#bt").value)return alert("الاسم والدفعة مطلوبين");
     const btn=$("#adds");btn.disabled=true;btn.textContent="جاري الحفظ...";
     try{
       const photo=$("#pic").files[0]?await shrink($("#pic").files[0]):"";
-      let code;do{code=genCode()}while((await getDoc(doc(db,"students",code))).exists());
-      const a2=secondAuth(),pw=genPw();let uid=null,user;
-      for(let i=0;i<5&&!uid;i++){
-        user=genUser();
-        try{uid=(await createUserWithEmailAndPassword(a2,mail(user),pw)).user.uid}
-        catch(e){if(e.code!=="auth/email-already-in-use")throw e}
-      }
-      if(!uid)throw new Error("تعذر إنشاء اسم مستخدم، حاولي مرة أخرى");
-      await signOut(a2);
       const batch=bs.find(b=>b.id==$("#bt").value);
-      const s={full_name:$("#n").value,birth_date:$("#bd").value||"",address:$("#ad").value,confession_father:$("#cf").value,church:$("#ch").value,phones:$("#ph").value.split(/[,،]/).map(x=>x.trim()).filter(Boolean),batch_id:batch.id,batch_name:batch.name,code,user_id:uid,username:user,init_pw:pw,photo,created:serverTimestamp()};
-      const b=writeBatch(db);
-      b.set(doc(db,"students",code),s);
-      b.set(doc(db,"users",uid),{role:"student",studentId:code,name:s.full_name});
-      await b.commit();
-      idcard({...s,id:code});
+      const s=await createStudent({full_name:clean($("#n").value),birth_date:$("#bd").value||"",address:clean($("#ad").value),confession_father:clean($("#cf").value),church:clean($("#ch").value),phones:$("#ph").value.split(/[,،]/).map(normPhone).filter(Boolean),photo},batch);
+      idcard(s);
     }catch(e){alert(e.message||e);btn.disabled=false;btn.textContent="حفظ وإنشاء الـ ID"}
   };
   document.querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>idcard(st.find(s=>s.id==b.dataset.id)));
 }
+
+/* استيراد من Excel */
+async function loadXLSX(){
+  if(window.XLSX)return;
+  await new Promise((ok,no)=>{const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";s.onload=ok;s.onerror=()=>no(new Error("تعذر تحميل مكتبة Excel، تأكدي من الإنترنت"));document.head.append(s)});
+}
+function importStudents(){
+  app.innerHTML=`<div class="card"><b>استيراد مخدومين من Excel</b><div class="m">الأعمدة المطلوبة: الاسم رباعي، التليفون، المرحلة، العنوان، تاريخ الميلاد، أب الاعتراف، الكنيسة. الدفعات بتتعمل تلقائيًا حسب المرحلة.</div><input id="xf" type="file" accept=".xlsx,.xls"><div id="xm" class="m"></div></div><div id="xp"></div><button class="s" id="bk">رجوع</button>`;
+  $("#bk").onclick=admin;
+  $("#xf").onchange=async e=>{
+    const f=e.target.files[0];if(!f)return;
+    try{
+      $("#xm").textContent="جاري القراءة...";
+      await loadXLSX();
+      const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{raw:true,defval:""}).map(rowToStudent).filter(s=>s.full_name);
+      $("#xm").textContent="";
+      previewImport(rows);
+    }catch(err){$("#xm").textContent=err.message||String(err)}
+  };
+}
+async function previewImport(rows){
+  const [ex,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
+  const names=new Set(ex.map(s=>clean(s.full_name)));
+  const items=rows.map(r=>({...r,dur:stageDur(r.stage),dup:names.has(r.full_name)}));
+  const ok=items.filter(r=>r.dur&&!r.dup);
+  $("#xp").innerHTML=`<div class="card"><b>${items.length} صف في الملف • هيتضاف ${ok.length}</b><div class="m">اللي مرحلته غير مفهومة أو اسمه موجود قبل كده بيتخطى. الخانات الفاضية بتتكمل بعدين من شاشة التعديل.</div></div>
+  ${items.map(r=>{const mi=missingOf(r);return `<div class="card" style="opacity:${r.dur&&!r.dup?1:.5}"><b>${esc(r.full_name)}</b> <span class="m">${esc(r.stage)}${r.dur?"":" ⚠ مرحلة غير مفهومة"}${r.dup?" • موجود قبل كده":""}</span>${mi.length?`<div class="w" style="font-size:.8em">⚠ ناقص: ${esc(mi.join("، "))}</div>`:""}</div>`}).join("")}
+  <button class="g" id="doimp" ${ok.length?"":"disabled"}>استيراد ${ok.length} مخدوم</button><div id="ip" class="m"></div>`;
+  $("#doimp").onclick=async()=>{
+    $("#doimp").disabled=true;
+    const made=[],fails=[],cache={};
+    const batchFor=async dur=>{
+      if(cache[dur])return cache[dur];
+      let b=bs.find(x=>x.entry_year==Y&&x.duration_years==dur);
+      if(!b){const nb={name:`دفعة تخرج ${Y+dur}`,entry_year:Y,duration_years:dur};const ref=await addDoc(col("batches"),nb);b={id:ref.id,...nb};bs.push(b)}
+      return cache[dur]=b;
+    };
+    for(let i=0;i<ok.length;i++){
+      $("#ip").textContent=`جاري إنشاء ${i+1} من ${ok.length}...`;
+      try{made.push(await createStudent(ok[i],await batchFor(ok[i].dur)))}
+      catch(e){fails.push(ok[i].full_name+": "+(e.message||e))}
+    }
+    app.innerHTML=`<div class="card"><b>تم استيراد ${made.length} مخدوم</b>${fails.length?`<div class="w">فشل ${fails.length}:<br>${fails.map(esc).join("<br>")}</div>`:""}<div class="m">الخطوة الجاية: اطبعي الكروت وأوراق الدخول، وضيفي الصور من شاشة التعديل.</div></div><button class="g" id="g1">طباعة الكروت وأوراق الدخول</button><button class="s" id="bk">رجوع</button>`;
+    $("#g1").onclick=()=>allCards();$("#bk").onclick=admin;
+  };
+}
+
+/* قائمة المراجعة (الناقص) */
+async function reviewList(){
+  const st=(await list(col("students"))).sort(arSort);
+  const rows=st.map(s=>({s,m:missingOf(s)})).filter(x=>x.m.length);
+  app.innerHTML=`<div class="m noprint">${rows.length} مخدوم محتاجين مراجعة</div><button class="g noprint" id="pr">طباعة (A4)</button>
+  <div class="pa" id="rv"><table class="rvt"><tr><th>#</th><th>الاسم</th><th>الدفعة</th><th>المطلوب</th></tr>${rows.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.s.full_name)}</td><td>${esc(x.s.batch_name)}</td><td>${esc(x.m.join("، "))}</td></tr>`).join("")}</table></div><button class="s noprint" id="bk">رجوع</button>`;
+  $("#pr").onclick=()=>printEl("rv","A4");
+  $("#bk").onclick=admin;
+}
+
+/* تعديل مخدوم */
+async function editStudent(s){
+  const bs=await list(col("batches"));
+  app.innerHTML=`<div class="card"><b>تعديل بيانات المخدوم</b>
+  <input id="n" value="${esc(s.full_name)}" placeholder="الاسم رباعي">
+  <div class="m">الصورة (سيبيها فاضية لو مش هتغيريها)</div><input id="pic" type="file" accept="image/*">
+  <input id="ph" value="${esc((s.phones||[]).join("، "))}" placeholder="التليفون - أكتر من رقم افصلي بفاصلة">
+  <div class="m">تاريخ الميلاد</div><input id="bd" type="date" value="${esc(s.birth_date||"")}">
+  <input id="cf" value="${esc(s.confession_father||"")}" placeholder="أب الاعتراف"><input id="ch" value="${esc(s.church||"")}" placeholder="كنيسته"><input id="ad" value="${esc(s.address||"")}" placeholder="العنوان">
+  <div class="m">الدفعة</div><select id="bt">${bs.map(b=>`<option value="${esc(b.id)}" ${b.id==s.batch_id?"selected":""}>${esc(b.name)}</option>`).join("")}</select>
+  <button id="sv" class="g">حفظ</button><button class="s" id="cx">إلغاء</button></div>`;
+  $("#cx").onclick=()=>idcard(s);
+  $("#sv").onclick=async()=>{
+    const btn=$("#sv");btn.disabled=true;
+    try{
+      const b=bs.find(x=>x.id==$("#bt").value);
+      const upd={full_name:clean($("#n").value),phones:$("#ph").value.split(/[,،]/).map(normPhone).filter(Boolean),birth_date:$("#bd").value||"",confession_father:clean($("#cf").value),church:clean($("#ch").value),address:clean($("#ad").value),batch_id:b.id,batch_name:b.name};
+      if(!upd.full_name)throw new Error("الاسم مطلوب");
+      if($("#pic").files[0])upd.photo=await shrink($("#pic").files[0]);
+      await updateDoc(doc(db,"students",s.id),upd);
+      idcard({...s,...upd});
+    }catch(e){alert(e.message||e);btn.disabled=false}
+  };
+}
+
 function idcard(s){
   app.innerHTML=`<div class="m noprint" style="text-align:center">كارت الـ ID (مقاس 85.6 × 54 مم)</div><div class="pa" id="pid">${cardHtml(s)}</div>
   <button class="g noprint" id="p1">طباعة الكارت</button>
   ${s.username?`<div class="m noprint" style="text-align:center;margin-top:14px">بيانات الدخول (ورقة منفصلة عن الكارت)</div><div class="pa" id="pcr">${slipHtml(s)}</div><button class="g noprint" id="p2">طباعة بيانات الدخول</button>`:""}
-  <button class="s noprint" id="bk">رجوع</button>`;
+  <button class="s noprint" id="ed">تعديل البيانات / الصورة</button><button class="s noprint" id="bk">رجوع</button>`;
   renderQR();
   $("#p1").onclick=()=>printEl("pid","85.6mm 54mm");
   if($("#p2"))$("#p2").onclick=()=>printEl("pcr","85.6mm 54mm");
+  $("#ed").onclick=()=>editStudent(s);
   $("#bk").onclick=admin;
 }
 async function allCards(bid=""){
   const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
-  const l=st.filter(s=>!bid||s.batch_id==bid).sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"));
+  const l=st.filter(s=>!bid||s.batch_id==bid).sort(arSort);
   app.innerHTML=`<select id="fb" class="noprint"><option value="">كل الدفعات</option>${bs.map(b=>`<option value="${esc(b.id)}" ${b.id==bid?"selected":""}>${esc(b.name)}</option>`).join("")}</select>
-  <div class="m noprint">${l.length} كارت</div><button class="g noprint" id="pa">طباعة (A4)</button><div class="pa sheet" id="sh">${l.map(cardHtml).join("")}</div><button class="s noprint" id="bk">رجوع</button>`;
+  <div class="m noprint">${l.length} مخدوم</div><button class="g noprint" id="pa">طباعة الكروت (A4)</button><button class="g noprint" id="pb">طباعة أوراق الدخول (A4)</button>
+  <div class="pa sheet" id="sh">${l.map(cardHtml).join("")}</div><div class="pa sheet" id="sh2" style="display:none">${l.map(slipHtml).join("")}</div><button class="s noprint" id="bk">رجوع</button>`;
   renderQR();
   $("#fb").onchange=e=>allCards(e.target.value);
   $("#pa").onclick=()=>printEl("sh","A4");
+  $("#pb").onclick=()=>printEl("sh2","A4");
   $("#bk").onclick=admin;
 }
 
+/* ---------- المحتوى: المادة العلمية + الكويزات (الأدمن) ---------- */
+let editQ=null;
+const KIND={video:"🎬",pdf:"📄",other:"📎"};
+const STATUS={draft:"مسودة",open:"مفتوح",closed:"مغلق"};
+async function content(){
+  const [subs,ms,qz]=await Promise.all([list(col("subjects")),list(query(col("materials"),where("year","==",Y))),list(query(col("quizzes"),where("year","==",Y)))]);
+  subs.sort((a,b)=>a.term-b.term||a.sort-b.sort);
+  const e=editQ?qz.find(q=>q.id==editQ):null;
+  const sOpt=sel=>subs.map(x=>`<option value="${esc(x.id)}" ${x.id==sel?"selected":""}>الترم ${x.term} - ${esc(x.name)}</option>`).join("");
+  const wOpt=sel=>[1,2,3,4,5,6,7,8].map(i=>`<option value="${i}" ${i==sel?"selected":""}>الأسبوع ${i}</option>`).join("");
+  const grouped=subs.map(s=>({s,items:ms.filter(m=>m.subject_id==s.id).sort((a,b)=>a.week_no-b.week_no||a.at-b.at)})).filter(g=>g.items.length);
+  shell(`<div class="card"><b>إضافة مادة علمية</b>
+  <select id="msj">${sOpt()}</select><select id="mwk">${wOpt()}</select>
+  <input id="mt" placeholder="العنوان (مثال: المحاضرة الأولى - فيديو)"><input id="mu" dir="ltr" placeholder="لينك التليجرام https://t.me/...">
+  <select id="mk"><option value="video">🎬 فيديو</option><option value="pdf">📄 PDF</option><option value="other">📎 ملف آخر</option></select>
+  <button id="addm" class="g">إضافة</button></div>
+  ${grouped.map(g=>`<div class="card"><b>${esc(g.s.name)}</b>${g.items.map(m=>`<div class="row" style="margin-top:8px"><a href="${esc(m.url)}" target="_blank" rel="noopener">${KIND[m.kind]||"📎"} الأسبوع ${m.week_no} - ${esc(m.title)}</a><button class="s" style="width:auto;padding:4px 10px" data-dm="${esc(m.id)}">حذف</button></div>`).join("")}</div>`).join("")}
+  <div class="card"><b>${e?"تعديل كويز (مسودة)":"كويز جديد"}</b>
+  <select id="qsj">${sOpt(e?.subject_id)}</select><select id="qwk">${wOpt(e?.week_no)}</select>
+  <input id="qt" placeholder="عنوان الكويز" value="${esc(e?.title||"")}">
+  <div class="m">الصقي الأسئلة بالشكل ده: سطر السؤال، وتحته الاختيارات كل واحد بشرطة، والإجابة الصح بعلامة * في آخرها، وسطر فاضي بين كل سؤالين.</div>
+  <pre class="ex">ما هو أول أسفار العهد القديم؟
+- التكوين *
+- الخروج
+- اللاويين</pre>
+  <textarea id="qx" rows="10" placeholder="الأسئلة هنا">${esc(e?quizToText(e.questions):"")}</textarea>
+  <button id="qpv" class="s">معاينة</button><div id="qpr"></div><button id="qsv" class="g">${e?"حفظ التعديل":"حفظ كمسودة"}</button>${e?'<button id="qcx" class="s">إلغاء التعديل</button>':""}</div>
+  ${qz.sort((a,b)=>b.at-a.at).map(q=>`<div class="card"><div class="row"><b>${esc(q.title)}</b><span class="m">${STATUS[q.status]||""}</span></div><div class="m">${esc(q.subject_name)} • الأسبوع ${q.week_no} • ${q.questions.length} سؤال</div>
+  <div class="row" style="gap:6px;margin-top:6px">${q.status=="draft"?`<button class="g" data-qa="pub:${esc(q.id)}">نشر</button><button class="s" data-qa="edit:${esc(q.id)}">تعديل</button>`:q.status=="open"?`<button class="s" data-qa="close:${esc(q.id)}">إغلاق</button>`:`<button class="s" data-qa="pub:${esc(q.id)}">فتح تاني</button>`}${q.status!="draft"?`<button class="s" data-qa="res:${esc(q.id)}">النتائج</button>`:""}<button class="s" data-qa="del:${esc(q.id)}">حذف</button></div></div>`).join("")}`);
+
+  $("#addm").onclick=async()=>{
+    const url=$("#mu").value.trim(),title=clean($("#mt").value);
+    if(!title)return alert("اكتبي عنوان");
+    if(!/^https:\/\//.test(url))return alert("اللينك لازم يبدأ بـ https://");
+    const s=subs.find(x=>x.id==$("#msj").value);
+    await addDoc(col("materials"),{year:Y,subject_id:s.id,subject_name:s.name,week_no:+$("#mwk").value,title,url,kind:$("#mk").value,at:Date.now()});
+    content();
+  };
+  document.querySelectorAll("[data-dm]").forEach(b=>b.onclick=async()=>{if(confirm("حذف المادة دي؟")){await deleteDoc(doc(db,"materials",b.dataset.dm));content()}});
+
+  const preview=()=>{
+    const r=parseQuiz($("#qx").value);
+    $("#qpr").innerHTML=`<div class="m">${r.qs.length} سؤال سليم</div>${r.errs.map(x=>`<div class="w">${esc(x)}</div>`).join("")}${r.qs.map((q,i)=>`<div class="card"><b>${i+1}. ${esc(q.q)}</b>${q.options.map((o,j)=>`<div class="${j==q.answer?"ok":""}">${j==q.answer?"✔":"•"} ${esc(o)}</div>`).join("")}</div>`).join("")}`;
+    return r;
+  };
+  $("#qpv").onclick=preview;
+  $("#qsv").onclick=async()=>{
+    const r=preview(),title=clean($("#qt").value);
+    if(!title)return alert("اكتبي عنوان الكويز");
+    if(r.errs.length||!r.qs.length)return alert("صلحي الأخطاء الأول");
+    const s=subs.find(x=>x.id==$("#qsj").value);
+    const data={year:Y,subject_id:s.id,subject_name:s.name,week_no:+$("#qwk").value,title,questions:r.qs};
+    if(e)await updateDoc(doc(db,"quizzes",e.id),data);
+    else await addDoc(col("quizzes"),{...data,status:"draft",at:Date.now()});
+    editQ=null;content();
+  };
+  if($("#qcx"))$("#qcx").onclick=()=>{editQ=null;content()};
+  document.querySelectorAll("[data-qa]").forEach(b=>b.onclick=async()=>{
+    const [a,id]=b.dataset.qa.split(":"),q=qz.find(x=>x.id==id);
+    if(a=="pub"){await updateDoc(doc(db,"quizzes",id),{status:"open"});content()}
+    else if(a=="close"){await updateDoc(doc(db,"quizzes",id),{status:"closed"});content()}
+    else if(a=="edit"){editQ=id;content()}
+    else if(a=="del"){if(confirm("حذف الكويز ده؟ النتائج المسجلة هتفضل في قاعدة البيانات.")){await deleteDoc(doc(db,"quizzes",id));content()}}
+    else if(a=="res")quizResults(q);
+  });
+}
+async function quizResults(q){
+  const [rs,sts,bts]=await Promise.all([list(query(col("quiz_results"),where("quiz_id","==",q.id))),list(col("students")),list(col("batches"))]);
+  const act=new Set(bts.filter(b=>b.entry_year<=Y&&Y<b.entry_year+b.duration_years).map(b=>b.id));
+  const rows=sts.filter(s=>act.has(s.batch_id)).sort(arSort).map(s=>({s,r:rs.find(x=>x.student_id==s.id)}));
+  const done=rows.filter(x=>x.r),avg=done.length?fmt(done.reduce((a,x)=>a+x.r.score/x.r.total*100,0)/done.length):0;
+  app.innerHTML=`<div class="card"><b>${esc(q.title)}</b><div class="m">${esc(q.subject_name)} • الأسبوع ${q.week_no}</div><div class="m">حلّ ${done.length} من ${rows.length} • المتوسط ${avg}%</div></div>
+  ${rows.map(({s,r})=>`<div class="card row"><div>${esc(s.full_name)}<div class="m">${esc(s.batch_name)}</div></div><div>${r?`<b>${r.score}/${r.total}</b> <span class="m">${fmt(r.score/r.total*100)}%</span> <button class="s" style="width:auto;padding:4px 8px" data-rm="${esc(r.id)}">إعادة</button>`:'<span class="m">لم يحل</span>'}</div></div>`).join("")}
+  <button class="s" id="bk">رجوع</button>`;
+  $("#bk").onclick=()=>{tab="content";admin()};
+  document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=async()=>{if(confirm("مسح نتيجة المخدوم عشان يحل الكويز تاني؟")){await deleteDoc(doc(db,"quiz_results",b.dataset.rm));quizResults(q)}});
+}
+
 /* ---------- شاشة المخدوم ---------- */
-async function student(){
+let sTab="home";
+const seen=(k,set)=>{try{const key=`seen_${k}_${me.studentId}`;if(set){localStorage.setItem(key,String(set));return 0}return +localStorage.getItem(key)||0}catch(e){return 0}};
+function sShell(body){
+  app.innerHTML=`<nav><button class="${sTab=="home"?"on":"s"}" data-s="home">الرئيسية</button><button class="${sTab=="mat"?"on":"s"}" data-s="mat">المادة العلمية</button><button class="${sTab=="quiz"?"on":"s"}" data-s="quiz">الكويزات</button></nav>${body}`;
+  document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{sTab=b.dataset.s;student()});
+}
+const student=()=>sTab=="mat"?stuMaterials():sTab=="quiz"?stuQuizzes():stuHome();
+
+async function stuHome(){
   const code=me.studentId;
   const sd=await getDoc(doc(db,"students",code));
   const s=sd.exists()?sd.data():null;
@@ -347,10 +590,58 @@ async function student(){
     const [subs,lecs,atts]=await Promise.all([list(col("subjects")),list(query(col("lectures"),where("year","==",Y))),list(query(col("attendance"),where("student_id","==",code),where("year","==",Y)))]);
     rows=calc(subs,lecs,atts);
   }
-  app.innerHTML=`<div class="pa">${s?cardHtml(s):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div>${s?`<div class="card"><b>حضوري</b>${rows.map(r=>`<div class="${r.warning?"w":""}"><div class="row"><span>${esc(r.subject_name)}</span><span>${r.attended}/${r.total_lectures} • ${r.attendance_pct}%${r.warning?" ⚠":""}</span></div><div class="bar ${r.warning?"w":""}"><i style="width:${r.attendance_pct}%"></i></div></div>`).join("")||'<div class="m">لسه مفيش محاضرات متسجلة</div>'}</div>`:""}<button class="s" id="pw">تغيير كلمة المرور</button><button class="s" id="out">خروج</button>`;
+  sShell(`<div class="pa">${s?cardHtml(s):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div>${s?`<div class="card"><b>حضوري</b>${rows.map(r=>`<div class="${r.warning?"w":""}"><div class="row"><span>${esc(r.subject_name)}</span><span>${r.attended}/${r.total_lectures} • ${r.attendance_pct}%${r.warning?" ⚠":""}</span></div><div class="bar ${r.warning?"w":""}"><i style="width:${r.attendance_pct}%"></i></div></div>`).join("")||'<div class="m">لسه مفيش محاضرات متسجلة</div>'}</div>`:""}<button class="s" id="pw">تغيير كلمة المرور</button><button class="s" id="out">خروج</button>`);
   $("#pw").onclick=changePw;
   renderQR();
   $("#out").onclick=()=>signOut(auth);
+}
+async function stuMaterials(){
+  const [subs,ms]=await Promise.all([list(col("subjects")),list(query(col("materials"),where("year","==",Y)))]);
+  const ls=seen("mat");
+  subs.sort((a,b)=>a.term-b.term||a.sort-b.sort);
+  const g=subs.map(s=>({s,items:ms.filter(m=>m.subject_id==s.id&&/^https:\/\//.test(m.url)).sort((a,b)=>a.week_no-b.week_no||a.at-b.at)})).filter(x=>x.items.length);
+  sShell(g.map(x=>`<div class="card"><b>${esc(x.s.name)}</b>${x.items.map(m=>`<div class="row" style="margin-top:8px"><a href="${esc(m.url)}" target="_blank" rel="noopener">${KIND[m.kind]||"📎"} الأسبوع ${m.week_no} - ${esc(m.title)}</a>${m.at>ls?'<span class="new">جديد</span>':""}</div>`).join("")}</div>`).join("")||'<div class="card m">لسه مفيش مواد علمية</div>');
+  seen("mat",Date.now());
+}
+async function stuQuizzes(){
+  const code=me.studentId;
+  const [o,c,rs]=await Promise.all([list(query(col("quizzes"),where("year","==",Y),where("status","==","open"))),list(query(col("quizzes"),where("year","==",Y),where("status","==","closed"))),list(query(col("quiz_results"),where("student_id","==",code),where("year","==",Y)))]);
+  const qs=[...o,...c].sort((a,b)=>b.at-a.at),ls=seen("quiz");
+  sShell(qs.map(q=>{
+    const r=rs.find(x=>x.quiz_id==q.id);
+    return `<div class="card"><div class="row"><b>${esc(q.title)}</b>${q.at>ls&&!r?'<span class="new">جديد</span>':""}</div><div class="m">${esc(q.subject_name)} • الأسبوع ${q.week_no} • ${q.questions.length} سؤال</div>
+    <div class="row" style="margin-top:6px">${r?`<b class="ok">درجتك ${r.score}/${r.total}</b>`:q.status=="open"?'<span class="m">لم تحل بعد</span>':'<span class="m w">انتهى وقت الكويز</span>'}<button class="${!r&&q.status=="open"?"g":"s"}" style="width:auto" data-q="${esc(q.id)}">${r?"التفاصيل":q.status=="open"?"ابدأ الكويز":"عرض"}</button></div></div>`;
+  }).join("")||'<div class="card m">مفيش كويزات متاحة دلوقتي</div>');
+  seen("quiz",Date.now());
+  document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>takeQuiz(qs.find(x=>x.id==b.dataset.q),rs.find(x=>x.quiz_id==b.dataset.q)));
+}
+function takeQuiz(q,res){
+  const back=`<button class="s" id="bk">رجوع</button>`;
+  const answers=()=>q.questions.map((qq,i)=>`<div class="card"><b>${i+1}. ${esc(qq.q)}</b><div class="ok">✔ ${esc(qq.options[qq.answer])}</div></div>`).join("");
+  if(res||q.status!="open"){
+    sShell(`<div class="card"><b>${esc(q.title)}</b>${res?`<div class="ok" style="margin-top:6px">درجتك ${res.score} من ${res.total} (${fmt(res.score/res.total*100)}%)</div>`:'<div class="m">انتهى وقت الكويز ولم يتم تسجيل محاولة</div>'}${q.status=="open"?'<div class="m">الإجابات الصحيحة هتظهر بعد قفل الكويز.</div>':""}</div>${q.status=="closed"?answers():""}${back}`);
+    $("#bk").onclick=stuQuizzes;return;
+  }
+  const order=q.questions.map(qq=>shuffle(qq.options.map((_,i)=>i)));
+  sShell(`<div class="card"><b>${esc(q.title)}</b><div class="m">${esc(q.subject_name)} • الأسبوع ${q.week_no} • محاولة واحدة فقط</div></div>
+  ${q.questions.map((qq,i)=>`<div class="card"><b>${i+1}. ${esc(qq.q)}</b>${order[i].map(oi=>`<label class="opt"><input type="radio" name="q${i}" value="${oi}"><span>${esc(qq.options[oi])}</span></label>`).join("")}</div>`).join("")}
+  <button class="g" id="sub">إرسال الإجابات</button>${back}<div class="m" id="qm"></div>`);
+  $("#bk").onclick=stuQuizzes;
+  $("#sub").onclick=async()=>{
+    const picked=q.questions.map((_,i)=>{const c=document.querySelector(`input[name=q${i}]:checked`);return c?+c.value:-1});
+    const un=picked.filter(x=>x<0).length;
+    if(un&&!confirm(`فيه ${un} سؤال من غير إجابة. تبعتي كده؟`))return;
+    const score=picked.filter((x,i)=>x===q.questions[i].answer).length;
+    $("#sub").disabled=true;
+    try{
+      await setDoc(doc(db,"quiz_results",`${q.id}_${me.studentId}`),{quiz_id:q.id,student_id:me.studentId,student_name:me.name||"",subject_id:q.subject_id,year:Y,week_no:q.week_no,score,total:q.questions.length,ts:serverTimestamp()});
+      sShell(`<div class="card"><b>تم تسجيل إجاباتك ✔</b><div class="ok" style="margin-top:6px">درجتك ${score} من ${q.questions.length} (${fmt(score/q.questions.length*100)}%)</div></div><button class="s" id="bk">رجوع</button>`);
+      $("#bk").onclick=stuQuizzes;
+    }catch(e){
+      $("#qm").textContent=e.code==="permission-denied"?"محاولتك اتسجلت قبل كده أو الكويز اتقفل":(e.message||String(e));
+      $("#sub").disabled=false;
+    }
+  };
 }
 </script>
 </body>
