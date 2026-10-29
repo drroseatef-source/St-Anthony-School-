@@ -306,7 +306,7 @@ const ALLC=[...CARDS,EARLY],cardOf=id=>ALLC.find(c=>c.id==id);
 const SET_XP=CARDS.reduce((a,c)=>a+c.xp,0),EARLY_NEED=4,BONUS=SET_XP+EARLY_NEED*EARLY.xp;
 const LEVELS=[[0,"المستوى 1","التلميذ"],[1000,"المستوى 2","المستكشف"],[2500,"المستوى 3","الخبير (Expert)"]];
 const levelOf=x=>{let i=0;LEVELS.forEach((l,k)=>{if(x>=l[0])i=k});return i};
-const cimg=id=>`cards/${id}.webp`;
+const cimg=id=>`${id}.webp`;
 const egp=x=>(Math.round(x/10*10)/10).toLocaleString("en");
 function cairoNow(d=new Date()){
   const p=Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).map(x=>[x.type,x.value]));
