@@ -32,7 +32,7 @@ button{background:var(--maroon);color:#fff;border:0;cursor:pointer;font-weight:7
 button.s{background:transparent;color:var(--maroon);border:1px solid var(--maroon)}
 button.g{background:var(--gold);color:var(--navy)}
 @media (prefers-color-scheme:dark){button.s{color:var(--gold);border-color:var(--gold)}}
-nav{display:flex;gap:6px}nav button{width:auto;flex:1}
+nav{display:flex;gap:6px;flex-wrap:wrap}nav button{width:auto;flex:1;min-width:64px}
 nav button.on{background:var(--navy)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}.m{color:var(--m);font-size:.85em}
 .idc{text-align:center;border:3px solid var(--maroon);border-radius:16px;background:var(--cream);padding:14px;position:relative}
@@ -69,6 +69,7 @@ nav button.on{background:var(--navy)}
  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 
+.cg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.cc{position:relative;border:3px solid transparent;border-radius:10px;overflow:hidden;cursor:pointer;background:#000;aspect-ratio:3/4}.cc img{width:100%;height:100%;object-fit:cover;display:block}.cc.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}.cc.lk img{filter:grayscale(1) brightness(.35)}.cc b{position:absolute;bottom:0;left:0;right:0;background:#000a;color:#fff;font-size:.7em;text-align:center;padding:2px}.cc .x{position:absolute;top:4px;right:4px;background:var(--gold);color:var(--navy);border-radius:10px;padding:0 6px;font-size:.75em;font-weight:900}
 .topbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--b)}.topbar button{width:auto;flex:1;margin:0}.topbar .m{width:100%;margin:0}
 textarea{font:inherit;padding:10px;border-radius:10px;border:1px solid var(--b);background:var(--c);color:var(--t);width:100%;margin:4px 0}
 nav{flex-wrap:wrap}nav button{min-width:76px}
@@ -211,7 +212,7 @@ async function login(msg=""){
   };
 }
 function shell(body){
-  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="${tab=="att"?"on":"s"}" data-t="att">الحضور</button><button class="${tab=="content"?"on":"s"}" data-t="content">المحتوى</button><button class="${tab=="rep"?"on":"s"}" data-t="rep">التقارير</button><button class="s" id="pw" style="flex:.8">كلمة المرور</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
+  app.innerHTML=`<nav><button class="${tab=="students"?"on":"s"}" data-t="students">المخدومين</button><button class="${tab=="batches"?"on":"s"}" data-t="batches">الدفعات</button><button class="${tab=="att"?"on":"s"}" data-t="att">الحضور</button><button class="${tab=="cards"?"on":"s"}" data-t="cards">الكروت</button><button class="${tab=="content"?"on":"s"}" data-t="content">المحتوى</button><button class="${tab=="rep"?"on":"s"}" data-t="rep">التقارير</button><button class="s" id="pw" style="flex:.8">كلمة المرور</button><button class="s" id="out" style="flex:.6">خروج</button></nav>${body}`;
   document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;admin()});
   $("#out").onclick=()=>signOut(auth);
   $("#pw").onclick=changePw;
@@ -232,7 +233,7 @@ function changePw(){
     }
   };
 }
-const admin=()=>tab=="batches"?batches():tab=="att"?attendance():tab=="content"?content():tab=="rep"?reports():students();
+const admin=()=>tab=="batches"?batches():tab=="att"?attendance():tab=="cards"?cardsAdmin():tab=="content"?content():tab=="rep"?reports():students();
 
 /* ---------- حساب الحضور ---------- */
 function calc(subs,lecs,atts){
@@ -287,6 +288,167 @@ async function scanner(lec,title){
   const q=new Html5Qrcode("rd");
   q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>{$("#msg").innerHTML='<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو سجلي بالكود</span>'});
   $("#st").onclick=async()=>{try{await q.stop()}catch(e){}attendance()};
+}
+
+/* ---------- الكروت والنقاط (XP) ---------- */
+const CARDS=[
+ {id:"love",n:"المحبة",r:"أسطوري",xp:500},
+ {id:"joy",n:"الفرح",r:"شائع",xp:100},
+ {id:"peace",n:"السلام",r:"نادر",xp:300},
+ {id:"patience",n:"طول الأناة",r:"شائع",xp:100},
+ {id:"kindness",n:"اللطف",r:"شائع",xp:100},
+ {id:"goodness",n:"الصلاح",r:"شائع",xp:100},
+ {id:"faith",n:"الإيمان",r:"نادر",xp:300},
+ {id:"gentleness",n:"الوداعة",r:"شائع",xp:100},
+ {id:"selfcontrol",n:"التعفف",r:"شائع",xp:100}];
+const EARLY={id:"early",n:"إليك أبكر",r:"نشاط",xp:200};
+const ALLC=[...CARDS,EARLY],cardOf=id=>ALLC.find(c=>c.id==id);
+const SET_XP=CARDS.reduce((a,c)=>a+c.xp,0),EARLY_NEED=4,BONUS=SET_XP+EARLY_NEED*EARLY.xp;
+const LEVELS=[[0,"المستوى 1","التلميذ"],[1000,"المستوى 2","المستكشف"],[2500,"المستوى 3","الخبير (Expert)"]];
+const levelOf=x=>{let i=0;LEVELS.forEach((l,k)=>{if(x>=l[0])i=k});return i};
+const cimg=id=>`cards/${id}.webp`;
+const egp=x=>(Math.round(x/10*10)/10).toLocaleString("en");
+function cairoNow(d=new Date()){
+  const p=Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(d).map(x=>[x.type,x.value]));
+  return {date:`${p.year}-${p.month}-${p.day}`,wd:p.weekday,mins:(+p.hour)*60+(+p.minute)};
+}
+const inEarlyWindow=()=>{const c=cairoNow();return c.wd==="Fri"&&c.mins>=800&&c.mins<810};   // الجمعة 1:20 - 1:30
+function tally(logs){
+  const fruits=new Set();let early=0,earned=0,spent=0,bonus=false;
+  logs.forEach(l=>{const x=Number(l.xp)||0;
+    if(l.type=="spend")spent+=x;
+    else{earned+=x;if(l.type=="bonus")bonus=true;else if(l.card_id=="early")early++;else fruits.add(l.card_id)}});
+  return {fruits,early,earned,spent,wallet:earned-spent,lvl:levelOf(earned),bonus};
+}
+const myLogs=code=>list(query(col("xp_log"),where("student_id","==",code),where("year","==",Y)));
+async function syncBonus(code,name){
+  const t=tally(await myLogs(code)),ok=t.fruits.size>=CARDS.length&&t.early>=EARLY_NEED,bid=`${Y}_${code}_bonus`;
+  if(ok&&!t.bonus){await setDoc(doc(db,"xp_log",bid),{student_id:code,student_name:name,type:"bonus",card_id:"",xp:BONUS,year:Y,date:cairoNow().date,ts:serverTimestamp(),note:"بونص اكتمال المجموعة"});return "granted"}
+  if(!ok&&t.bonus){await deleteDoc(doc(db,"xp_log",bid));return "removed"}
+  return "";
+}
+
+function cardsAdmin(){
+  let sel=inEarlyWindow()?"early":CARDS[0].id;
+  const draw=()=>{
+    $("#cg").innerHTML=ALLC.map(c=>`<div class="cc ${c.id==sel?"on":""}" data-c="${c.id}"><img src="${cimg(c.id)}" loading="lazy" alt=""><span class="x">${c.xp}</span><b>${esc(c.n)}</b></div>`).join("");
+    document.querySelectorAll("#cg [data-c]").forEach(e=>e.onclick=()=>{sel=e.dataset.c;draw()});
+    $("#go").textContent=`▶ بدء منح كارت «${cardOf(sel).n}» (${cardOf(sel).xp} XP)`;
+  };
+  shell(`<div class="card"><b>اختاري الكارت اللي هتمنحيه</b>${inEarlyWindow()?'<div class="ok m">⏰ دلوقتي في وقت إليك أبكر، اتحدد الكارت تلقائيًا</div>':""}<div class="cg" id="cg" style="margin-top:8px"></div><button class="g" id="go"></button></div>
+  <button class="s" id="rp">📊 النقاط حسب الأسبوع</button><button class="s" id="rd2">💰 صرف نقاط</button>`);
+  draw();
+  $("#go").onclick=()=>awardScreen(sel);
+  $("#rp").onclick=xpReport;
+  $("#rd2").onclick=redeemScreen;
+}
+
+async function awardScreen(cid){
+  const card=cardOf(cid);
+  const st=(await list(col("students"))).filter(isActive);
+  const by=Object.fromEntries(st.map(s=>[s.id,s]));
+  const hist=[];let sum=0;
+  app.innerHTML=`<div class="topbar noprint"><button class="s" id="st">→ إنهاء</button><button class="s" id="un">↩ تراجع عن آخر منح</button></div>
+  <div class="card"><div class="row"><b>منح كارت: ${esc(card.n)}</b><span class="m">${card.xp} XP</span></div>
+  <img src="${cimg(cid)}" alt="" style="width:80px;border-radius:8px;display:block;margin:6px auto"><div id="rd" style="width:100%;margin:8px 0"></div><div id="msg" class="m">وجّهي الكاميرا على الـ QR</div>
+  <input id="mc" placeholder="أو اكتبي الكود يدويًا"><button id="mb" class="g">منح</button>
+  <input id="sq" placeholder="🔍 أو ابحثي بالاسم"><div id="sr"></div></div>
+  <div class="card"><b>اتمنح لهم: <span id="cnt">0</span> • <span id="sum">0</span> XP</b><div id="ls" class="m"></div></div>`;
+  const msg=h=>{$("#msg").innerHTML=h};
+  const draw=()=>{$("#cnt").textContent=hist.length;$("#sum").textContent=sum;$("#ls").innerHTML=hist.slice().reverse().map(h=>esc(h.name)).join("<br>")};
+  let last="",lt=0;
+  const give=async(s,raw)=>{
+    if(!s){msg('<span class="w">كود غير معروف</span>');return}
+    const code=s.id,today=cairoNow().date;
+    const lid=cid=="early"?`${Y}_${code}_early_${today}`:`${Y}_${code}_${cid}`;
+    try{
+      if((await getDoc(doc(db,"xp_log",lid))).exists()){msg(`<span class="w">${esc(s.full_name)} معاه الكارت ده قبل كده${cid=="early"?" (النهارده)":""}</span>`);return}
+      await setDoc(doc(db,"xp_log",lid),{student_id:code,student_name:s.full_name,type:"card",card_id:cid,xp:card.xp,year:Y,date:today,ts:serverTimestamp()});
+      hist.push({lid,code,name:s.full_name,xp:card.xp});sum+=card.xp;draw();
+      navigator.vibrate&&navigator.vibrate(120);
+      let extra="";
+      try{if(await syncBonus(code,s.full_name)=="granted")extra=` 🎉 اكتملت مجموعته! بونص ${BONUS} XP`}catch(e){}
+      msg(`<span class="ok">✔ ${esc(s.full_name)} +${card.xp} XP${extra}</span>`);
+    }catch(e){msg(`<span class="w">${esc(e.message||e)}</span>`)}
+  };
+  const mark=async raw=>{
+    const code=raw.trim().toUpperCase();
+    if(!code||(code===last&&Date.now()-lt<4000))return;last=code;lt=Date.now();
+    if(!/^[A-Z0-9]{4,20}$/.test(code)){msg('<span class="w">كود غير معروف</span>');return}
+    let s=by[code];
+    if(!s){const d=await getDoc(doc(db,"students",code));if(d.exists()){s={id:d.id,...d.data()};if(s.status==="withdrawn"){msg(`<span class="w">${esc(s.full_name)} منسحب من الكورس</span>`);return}}}
+    give(s);
+  };
+  $("#mb").onclick=()=>{mark($("#mc").value);$("#mc").value=""};
+  $("#sq").oninput=e=>{
+    const q=clean(e.target.value);
+    $("#sr").innerHTML=q?st.filter(s=>s.full_name.includes(q)).slice(0,6).map(s=>`<button class="s" data-k="${esc(s.id)}">${esc(s.full_name)}</button>`).join(""):"";
+    document.querySelectorAll("#sr [data-k]").forEach(b=>b.onclick=()=>{give(by[b.dataset.k]);$("#sq").value="";$("#sr").innerHTML=""});
+  };
+  $("#un").onclick=async()=>{
+    const h=hist.pop();if(!h)return msg('<span class="m">مفيش حاجة تتراجع عنها</span>');
+    try{await deleteDoc(doc(db,"xp_log",h.lid));await syncBonus(h.code,h.name);sum-=h.xp;draw();last="";msg(`<span class="m">اتلغى منح ${esc(card.n)} لـ ${esc(h.name)}</span>`)}
+    catch(e){hist.push(h);msg(`<span class="w">${esc(e.message||e)}</span>`)}
+  };
+  const q=new Html5Qrcode("rd");
+  q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>msg('<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو اكتبي الكود</span>'));
+  $("#st").onclick=async()=>{try{await q.stop()}catch(e){}cardsAdmin()};
+}
+
+async function xpReport(){
+  app.innerHTML='<div class="topbar noprint"><button class="s" id="bk">→ رجوع</button></div><div class="card m">بحمّل...</div>';
+  $("#bk").onclick=cardsAdmin;
+  const [logs,st]=await Promise.all([list(query(col("xp_log"),where("year","==",Y))),list(col("students"))]);
+  const wkStart=d=>{const t=new Date(d+"T00:00:00Z");return new Date(t.getTime()-((t.getUTCDay()+1)%7)*864e5)};
+  const fd=d=>`${d.getUTCDate()}/${d.getUTCMonth()+1}`;
+  const W={};
+  logs.forEach(l=>{
+    const s=wkStart(l.date||cairoNow().date),k=s.toISOString().slice(0,10);
+    const w=W[k]??(W[k]={s,cards:0,early:0,bonus:0,xp:0,spent:0});
+    const x=Number(l.xp)||0;
+    if(l.type=="spend")w.spent+=x;
+    else{w.xp+=x;if(l.type=="bonus")w.bonus++;else{w.cards++;if(l.card_id=="early")w.early++}}
+  });
+  const ks=Object.keys(W).sort(),T=tally(logs.map(l=>l));
+  const gr=logs.filter(l=>l.type!="spend").reduce((a,l)=>a+(Number(l.xp)||0),0),sp=logs.filter(l=>l.type=="spend").reduce((a,l)=>a+(Number(l.xp)||0),0);
+  const per={};logs.forEach(l=>{if(l.type!="spend"){const p=per[l.student_id]??(per[l.student_id]=0);per[l.student_id]=p+(Number(l.xp)||0)}});
+  const lv=[0,0,0];st.filter(isActive).forEach(s=>{lv[levelOf(per[s.id]||0)]++});
+  const cc={};logs.forEach(l=>{if(l.type=="card")cc[l.card_id]=(cc[l.card_id]||0)+1});
+  app.innerHTML=`<div class="topbar noprint"><button class="s" id="bk">→ رجوع</button></div>
+  <div class="card"><b>إجمالي النقاط في الترم</b>
+   <div class="row"><span>اتمنح</span><b>${gr} XP = ${egp(gr)} جنيه</b></div>
+   <div class="row"><span>اتصرف</span><b>${sp} XP = ${egp(sp)} جنيه</b></div>
+   <div class="row"><span>لسه ما اتصرفش (التزام)</span><b class="w">${gr-sp} XP = ${egp(gr-sp)} جنيه</b></div></div>
+  <div class="card"><b>حسب الأسبوع</b>${ks.map(k=>{const w=W[k],e=new Date(w.s.getTime()+6*864e5);return `<div style="border-top:1px solid var(--b);margin-top:8px;padding-top:6px"><div class="row"><b>${fd(w.s)} - ${fd(e)}</b><b>${w.xp} XP • ${egp(w.xp)} جنيه</b></div><div class="m">${w.cards} كارت (منها ${w.early} إليك أبكر)${w.bonus?` • ${w.bonus} بونص`:""}${w.spent?` • اتصرف ${w.spent} XP`:""}</div></div>`}).join("")||'<div class="m">لسه ما اتمنحش أي كارت</div>'}</div>
+  <div class="card"><b>المخدومين حسب المستوى</b>${LEVELS.map((l,i)=>`<div class="row"><span>${l[1]} - ${l[2]}</span><b>${lv[i]}</b></div>`).join("")}</div>
+  <div class="card"><b>عدد اللي حصلوا على كل كارت</b>${ALLC.map(c=>`<div class="row"><span>${esc(c.n)}</span><b>${cc[c.id]||0}</b></div>`).join("")}</div>`;
+  $("#bk").onclick=cardsAdmin;
+}
+
+async function redeemScreen(){
+  const st=(await list(col("students"))).filter(isActive).sort(arSort);
+  app.innerHTML=`<div class="topbar noprint"><button class="s" id="bk">→ رجوع</button></div><div class="card"><b>صرف نقاط</b><input id="sq" placeholder="🔍 ابحثي بالاسم"><div id="sr"></div></div><div id="rp"></div>`;
+  $("#bk").onclick=cardsAdmin;
+  const show=async s=>{
+    const logs=await myLogs(s.id),t=tally(logs),sp=logs.filter(l=>l.type=="spend").sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    $("#rp").innerHTML=`<div class="card"><b>${esc(s.full_name)}</b><div class="m">${LEVELS[t.lvl][1]} - ${LEVELS[t.lvl][2]} • إجمالي ${t.earned} XP</div>
+    <div class="row"><span>الرصيد المتاح</span><b>${t.wallet} XP = ${egp(t.wallet)} جنيه</b></div>
+    <input id="am" type="number" min="1" step="1" inputmode="numeric" placeholder="عدد النقاط اللي هتتصرف"><input id="nt" placeholder="سبب الصرف (هدية / خصم رحلة / نقدًا...)"><button class="g" id="ok">صرف</button></div>
+    ${sp.length?`<div class="card"><b>الصرف السابق</b>${sp.map(l=>`<div class="row" style="margin-top:6px"><span>${esc(l.date||"")} • ${esc(l.note||"")}</span><span>${l.xp} XP <button class="s" style="width:auto;padding:2px 8px" data-d="${esc(l.id)}">✖</button></span></div>`).join("")}</div>`:""}`;
+    $("#ok").onclick=async()=>{
+      const n=Math.floor(+$("#am").value);
+      if(!(n>0))return alert("اكتبي عدد النقاط");
+      if(n>t.wallet)return alert(`الرصيد المتاح ${t.wallet} XP بس`);
+      if(!confirm(`صرف ${n} XP (= ${egp(n)} جنيه) لـ ${s.full_name}؟`))return;
+      try{await addDoc(col("xp_log"),{student_id:s.id,student_name:s.full_name,type:"spend",card_id:"",xp:n,year:Y,date:cairoNow().date,ts:serverTimestamp(),note:clean($("#nt").value)});show(s)}catch(e){alert(e.message)}
+    };
+    document.querySelectorAll("[data-d]").forEach(b=>b.onclick=async()=>{if(!confirm("إلغاء عملية الصرف دي؟ النقاط هترجع للرصيد."))return;try{await deleteDoc(doc(db,"xp_log",b.dataset.d));show(s)}catch(e){alert(e.message)}});
+  };
+  $("#sq").oninput=e=>{
+    const q=clean(e.target.value);
+    $("#sr").innerHTML=q?st.filter(s=>s.full_name.includes(q)).slice(0,6).map(s=>`<button class="s" data-k="${esc(s.id)}">${esc(s.full_name)}</button>`).join(""):"";
+    document.querySelectorAll("#sr [data-k]").forEach(b=>b.onclick=()=>{$("#sr").innerHTML="";$("#sq").value="";show(st.find(x=>x.id==b.dataset.k))});
+  };
 }
 
 /* ---------- التقارير ---------- */
@@ -376,12 +538,23 @@ async function ensureSeq(st){
   miss.forEach(s=>{s.seq=++n;b.set(doc(db,"students",s.id),{seq:s.seq},{merge:true})});
   await b.commit();
 }
+/* أعياد الميلاد */
+const bdMD=b=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(b||"");if(!m)return null;return {y:+m[1],m:+m[2],d:+m[3]}};
+const isLeap=y=>(y%4==0&&y%100!=0)||y%400==0;
+function bdayToday(s,now=new Date()){const b=bdMD(s.birth_date);if(!b)return false;let d=b.d;if(b.m==2&&d==29&&!isLeap(now.getFullYear()))d=28;return b.m==now.getMonth()+1&&d==now.getDate()}
+const MONTHS=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+function bdayCard(act,now=new Date()){
+  if(now.getDate()<25)return "";
+  const nm=(now.getMonth()+1)%12,yr=now.getFullYear()+(now.getMonth()==11?1:0);
+  const rows=act.map(s=>({s,b:bdMD(s.birth_date)})).filter(x=>x.b&&x.b.m==nm+1).sort((a,c)=>a.b.d-c.b.d);
+  return `<div class="card"><b>🎂 أعياد ميلاد شهر ${MONTHS[nm]}</b>${rows.length?rows.map(({s,b})=>`<div class="row" style="margin-top:6px"><span>${b.d} ${MONTHS[nm]} • ${esc(s.full_name)} <span class="m">${esc(s.batch_name||"")}</span></span><span class="m">${yr-b.y} سنة${s.phones&&s.phones[0]?" • "+esc(s.phones[0]):""}</span></div>`).join(""):'<div class="m" style="margin-top:6px">مفيش أعياد ميلاد الشهر الجاي</div>'}</div>`;
+}
 async function students(){
   const [st,bs]=await Promise.all([list(col("students")),list(col("batches"))]);
   try{await ensureSeq(st)}catch(e){}
   st.sort((a,b)=>(a.seq||0)-(b.seq||0)||arSort(a,b));
   const act=st.filter(isActive),wd=st.filter(s=>!isActive(s));
-  shell(`<div class="row" style="gap:6px"><button class="s" id="imp">استيراد من Excel</button><button class="s" id="rvw">قائمة المراجعة</button></div>
+  shell(`${bdayCard(act)}<div class="row" style="gap:6px"><button class="s" id="imp">استيراد من Excel</button><button class="s" id="rvw">قائمة المراجعة</button></div>
   <div class="card"><b>مخدوم جديد</b><input id="n" placeholder="الاسم رباعي"><div class="m">الصورة الشخصية</div><input id="pic" type="file" accept="image/*"><input id="ph" placeholder="التليفون (واتس اب) - أكتر من رقم افصلي بفاصلة">
   <div class="m">تاريخ الميلاد</div><input id="bd" type="date"><input id="cf" placeholder="أب الاعتراف"><input id="ch" placeholder="كنيسته"><input id="ad" placeholder="العنوان">
   <div class="m">المرحلة / الدفعة</div><select id="bt">${bs.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("")}</select><button id="adds" class="g">حفظ وإنشاء الـ ID</button></div>
@@ -499,6 +672,25 @@ async function setStatus(s,status){
   await b.commit();
   idcard({...s,status});
 }
+async function recreateAccount(s){
+  if(!confirm(`إعادة إنشاء حساب ${s.full_name}؟\nهيتعمل اسم مستخدم وكلمة مرور جداد، والقديمين هيبطلوا يشتغلوا. الحضور والنتايج بيفضلوا زي ما هما.`))return;
+  const a2=secondAuth(),pw=genPw();let uid=null,user;
+  try{
+    for(let i=0;i<5&&!uid;i++){
+      user=genUser();
+      try{uid=(await createUserWithEmailAndPassword(a2,mail(user),pw)).user.uid}
+      catch(e){if(e.code!=="auth/email-already-in-use")throw e}
+    }
+    if(!uid)throw new Error("تعذر إنشاء اسم مستخدم، حاولي مرة أخرى");
+    await signOut(a2);
+    const b=writeBatch(db);
+    b.set(doc(db,"students",s.id),{user_id:uid,username:user,init_pw:pw},{merge:true});
+    if(s.user_id)b.delete(doc(db,"users",s.user_id));
+    b.set(doc(db,"users",uid),{role:"student",studentId:s.id,name:s.full_name});
+    await b.commit();
+  }catch(e){alert("حصلت مشكلة: "+(e.message||e));return}
+  idcard({...s,user_id:uid,username:user,init_pw:pw});
+}
 async function deleteStudent(s){
   if(!confirm(`حذف ${s.full_name} نهائيًا مع كل حضوره ونتائجه؟ مفيش رجوع.`))return;
   const [att,qr]=await Promise.all([list(query(col("attendance"),where("student_id","==",s.id))),list(query(col("quiz_results"),where("student_id","==",s.id)))]);
@@ -512,12 +704,13 @@ function idcard(s){
   app.innerHTML=`<div class="topbar noprint"><button class="s" id="bk">→ رجوع</button></div>${w?'<div class="card w noprint">⚠ مخدوم منسحب: مش بيظهر في الحضور ولا التقارير ومش بيقدر يدخل التطبيق</div>':""}<div class="m noprint" style="text-align:center">كارت الـ ID (مقاس 85.6 × 54 مم)</div><div class="pa" id="pid">${cardHtml(s)}</div>
   <button class="g noprint" id="p1">طباعة الكارت</button>
   ${s.username?`<div class="m noprint" style="text-align:center;margin-top:14px">بيانات الدخول (ورقة منفصلة عن الكارت)</div><div class="pa" id="pcr">${slipHtml(s)}</div><button class="g noprint" id="p2">طباعة بيانات الدخول</button>`:""}
-  <button class="s noprint" id="ed">تعديل البيانات / الصورة</button>
+  <button class="s noprint" id="ed">تعديل البيانات / الصورة</button>${!w&&s.username?'<button class="s noprint" id="rc">إعادة إنشاء الحساب (يوزر وباسورد جداد)</button>':""}
   ${w?'<button class="g noprint" id="rs">استرجاع للدفعة</button><button class="s noprint" id="dl">حذف نهائي</button>':'<button class="s noprint" id="wd">تسجيل انسحاب</button>'}`;
   renderQR();
   $("#p1").onclick=()=>printEl("pid","85.6mm 54mm");
   if($("#p2"))$("#p2").onclick=()=>printEl("pcr","85.6mm 54mm");
   $("#ed").onclick=()=>editStudent(s);
+  if($("#rc"))$("#rc").onclick=()=>recreateAccount(s);
   if($("#wd"))$("#wd").onclick=()=>{if(confirm(`تسجيل انسحاب ${s.full_name}؟ بياناته وحضوره بيفضلوا محفوظين وتقدري ترجعيه في أي وقت.`))setStatus(s,"withdrawn")};
   if($("#rs"))$("#rs").onclick=()=>setStatus(s,"active");
   if($("#dl"))$("#dl").onclick=()=>deleteStudent(s);
@@ -637,10 +830,10 @@ async function quizResults(q){
 let sTab="home";
 const seen=(k,set)=>{try{const key=`seen_${k}_${me.studentId}`;if(set){localStorage.setItem(key,String(set));return 0}return +localStorage.getItem(key)||0}catch(e){return 0}};
 function sShell(body){
-  app.innerHTML=`<nav><button class="${sTab=="home"?"on":"s"}" data-s="home">الرئيسية</button><button class="${sTab=="mat"?"on":"s"}" data-s="mat">المادة العلمية</button><button class="${sTab=="quiz"?"on":"s"}" data-s="quiz">الكويزات</button></nav>${body}`;
+  app.innerHTML=`<nav><button class="${sTab=="home"?"on":"s"}" data-s="home">الرئيسية</button><button class="${sTab=="cards"?"on":"s"}" data-s="cards">🃏 كروتي</button><button class="${sTab=="mat"?"on":"s"}" data-s="mat">المادة العلمية</button><button class="${sTab=="quiz"?"on":"s"}" data-s="quiz">الكويزات</button></nav>${body}`;
   document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{sTab=b.dataset.s;student()});
 }
-const student=()=>sTab=="mat"?stuMaterials():sTab=="quiz"?stuQuizzes():stuHome();
+const student=()=>sTab=="cards"?stuCards():sTab=="mat"?stuMaterials():sTab=="quiz"?stuQuizzes():stuHome();
 
 async function stuHome(){
   const code=me.studentId;
@@ -651,10 +844,32 @@ async function stuHome(){
     const [subs,lecs,atts]=await Promise.all([list(col("subjects")),list(query(col("lectures"),where("year","==",Y))),list(query(col("attendance"),where("student_id","==",code),where("year","==",Y)))]);
     rows=calc(subs,lecs,atts);
   }
-  sShell(`<div class="pa">${s?cardHtml(s):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div>${s?`<div class="card"><b>حضوري</b>${rows.map(r=>`<div class="${r.warning?"w":""}"><div class="row"><span>${esc(r.subject_name)}</span><span>${r.attended}/${r.total_lectures} • ${r.attendance_pct}%${r.warning?" ⚠":""}</span></div><div class="bar ${r.warning?"w":""}"><i style="width:${r.attendance_pct}%"></i></div></div>`).join("")||'<div class="m">لسه مفيش محاضرات متسجلة</div>'}</div>`:""}<button class="s" id="pw">تغيير كلمة المرور</button><button class="s" id="out">خروج</button>`);
+  const first=s?String(s.full_name||"").trim().split(/\s+/)[0]:"";
+  const bday=s&&bdayToday(s)?`<div class="card" style="text-align:center"><div style="font-size:2em">🎂🎉</div><b>عيد ميلاد سعيد يا ${esc(first)}!</b><div class="m" style="margin-top:6px">ربنا يفرّح قلبك ويبارك في عمرك ويحفظك في محبته طول أيام حياتك. كل سنة وإنت في رعاية ربنا 🙏</div></div>`:"";
+  sShell(`${bday}<div class="pa">${s?cardHtml(s):"حسابك لسه مش مربوط ببيانات مخدوم، كلمي الأدمن."}</div>${s?`<div class="card"><b>حضوري</b>${rows.map(r=>`<div class="${r.warning?"w":""}"><div class="row"><span>${esc(r.subject_name)}</span><span>${r.attended}/${r.total_lectures} • ${r.attendance_pct}%${r.warning?" ⚠":""}</span></div><div class="bar ${r.warning?"w":""}"><i style="width:${r.attendance_pct}%"></i></div></div>`).join("")||'<div class="m">لسه مفيش محاضرات متسجلة</div>'}</div>`:""}<button class="s" id="pw">تغيير كلمة المرور</button><button class="s" id="out">خروج</button>`);
   $("#pw").onclick=changePw;
   renderQR();
   $("#out").onclick=()=>signOut(auth);
+}
+async function stuCards(){
+  const code=me.studentId;
+  const logs=await myLogs(code),t=tally(logs),li=t.lvl,nx=LEVELS[li+1],base=LEVELS[li][0];
+  const pct=nx?Math.min(100,(t.earned-base)/(nx[0]-base)*100):100;
+  const cnt={};logs.forEach(l=>{if(l.type=="card")cnt[l.card_id]=(cnt[l.card_id]||0)+1});
+  const left=CARDS.length-t.fruits.size,needE=Math.max(0,EARLY_NEED-t.early);
+  sShell(`<div class="card" style="text-align:center"><div class="m">${LEVELS[li][1]}</div><div style="font-size:1.5em;font-weight:900">${LEVELS[li][2]}</div>
+   <div class="row"><b>${t.earned} XP</b><span class="m">${nx?`${nx[2]} عند ${nx[0]} XP`:"أعلى مستوى 🏆"}</span></div><div class="bar"><i style="width:${pct}%"></i></div>
+   <div class="row" style="margin-top:6px"><span>💰 رصيدك</span><b>${t.wallet} XP <span class="m">(= ${egp(t.wallet)} جنيه)</span></b></div></div>
+  <div class="card"><div class="row"><b>🍇 ثمار الروح القدس</b><b>${t.fruits.size}/${CARDS.length}</b></div>
+   <div class="cg" style="margin-top:8px">${CARDS.map(c=>`<div class="cc ${t.fruits.has(c.id)?"":"lk"}" data-c="${c.id}"><img src="${cimg(c.id)}" loading="lazy" decoding="async" alt="${esc(c.n)}"><b>${t.fruits.has(c.id)?esc(c.n):"🔒"}</b></div>`).join("")}</div></div>
+  <div class="card"><div class="row"><b>⏰ إليك أبكر</b><b>${t.early}</b></div>
+   <div class="cg" style="margin-top:8px;grid-template-columns:repeat(3,1fr)"><div class="cc ${t.early?"":"lk"}" data-c="early"><img src="${cimg("early")}" loading="lazy" decoding="async" alt="إليك أبكر">${t.early?`<span class="x">×${t.early}</span>`:""}</div></div></div>
+  <div class="card">${t.bonus?`<b class="ok">🎉 خدت بونص اكتمال المجموعة +${BONUS} XP</b>`:`<b>🎁 بونص ${BONUS} XP</b><div class="m">كمّل كل كروت الثمار (فاضل ${left}) وخد ${EARLY_NEED} كروت من إليك أبكر على الأقل (فاضل ${needE}).</div>`}</div>`);
+  document.querySelectorAll("[data-c]").forEach(e=>e.onclick=()=>{
+    const id=e.dataset.c;if(id=="early"?!t.early:!t.fruits.has(id))return;
+    const o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:#000d;z-index:50;display:flex;align-items:center;justify-content:center";
+    o.innerHTML=`<img src="${cimg(id)}" alt="" style="max-width:92%;max-height:92%;border-radius:12px">`;o.onclick=()=>o.remove();document.body.appendChild(o);
+  });
 }
 async function stuMaterials(){
   const [subs,ms]=await Promise.all([list(col("subjects")),list(query(col("materials"),where("year","==",Y)))]);
