@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</title>
 <link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin><link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js"><link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js"><link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
 :root{--navy:#1b2a5c;--gold:#e8b93c;--maroon:#7a1f2b;--cream:#f7f0e1;--bg:#fbf7ee;--c:#fff;--t:#23233a;--m:#777;--b:#e4dac4;--ca:rgba(255,255,255,.9)}
@@ -84,13 +85,11 @@ pre.ex{background:var(--bg);border:1px dashed var(--b);border-radius:10px;paddin
 </head>
 <body>
 <header><img src="logo.png" alt=""><div><b>مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية</b><span>كنيسة رئيس الملائكة الجليل ميخائيل ببهتيم</span></div></header>
-<main id="app"></main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<main id="app"><div class="card m" style="text-align:center">جاري التحميل...</div></main>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,updatePassword} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {getFirestore,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,collection,query,where,writeBatch,serverTimestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {initializeFirestore,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,collection,query,where,writeBatch,serverTimestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyDpsJ0BZ9J9HuOF7PuEELwIN-5T7crqpsk",
@@ -100,11 +99,15 @@ const firebaseConfig={
   messagingSenderId:"386346441700",
   appId:"1:386346441700:web:fa6ea87e3f65ef8a2a45f1"
 };
-const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=getFirestore(fb);
+const fb=initializeApp(firebaseConfig),auth=getAuth(fb),db=initializeFirestore(fb,{experimentalAutoDetectLongPolling:true});   // يكتشف بسرعة لو الشبكة بتعطّل الاتصال المباشر ويحوّل لطريقة تانية بدل ما يستنى كتير
 let auth2=null;                       // second auth instance: creates student accounts without logging the admin out
 const secondAuth=()=>auth2??(auth2=getAuth(initializeApp(firebaseConfig,"creator")));
 
 const $=s=>document.querySelector(s),app=$("#app");
+const _libs={};
+const loadLib=src=>_libs[src]??(_libs[src]=new Promise((ok,no)=>{const e=document.createElement("script");e.src=src;e.onload=ok;e.onerror=()=>{delete _libs[src];no(new Error("تعذر تحميل مكتبة، تأكدي من الإنترنت"))};document.head.appendChild(e)}));
+const libQR=()=>loadLib("https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js");
+const libScan=()=>loadLib("https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js");
 let role=null,me=null,tab="students",Y=2026,signingUp=false;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const mail=u=>u.includes("@")?u.trim():u.trim().toLowerCase()+"@church.app";
@@ -285,6 +288,7 @@ async function scanner(lec,title){
     }catch(e){$("#msg").textContent=e.message||String(e)}
   };
   $("#mb").onclick=()=>{mark($("#mc").value);$("#mc").value=""};
+  try{await libScan()}catch(e){$("#msg").innerHTML='<span class="w">تعذر تحميل الماسح، تأكدي من الإنترنت واكتبي الكود يدويًا</span>';$("#st").onclick=attendance;return}
   const q=new Html5Qrcode("rd");
   q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>{$("#msg").innerHTML='<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو سجلي بالكود</span>'});
   $("#st").onclick=async()=>{try{await q.stop()}catch(e){}attendance()};
@@ -390,6 +394,7 @@ async function awardScreen(cid){
     try{await deleteDoc(doc(db,"xp_log",h.lid));await syncBonus(h.code,h.name);sum-=h.xp;draw();last="";msg(`<span class="m">اتلغى منح ${esc(card.n)} لـ ${esc(h.name)}</span>`)}
     catch(e){hist.push(h);msg(`<span class="w">${esc(e.message||e)}</span>`)}
   };
+  try{await libScan()}catch(e){msg('<span class="w">تعذر تحميل الماسح، تأكدي من الإنترنت واكتبي الكود يدويًا</span>');$("#st").onclick=cardsAdmin;return}
   const q=new Html5Qrcode("rd");
   q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>msg('<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو اكتبي الكود</span>'));
   $("#st").onclick=async()=>{try{await q.stop()}catch(e){}cardsAdmin()};
@@ -487,7 +492,7 @@ async function shrink(file){
   c.getContext("2d").drawImage(im,(W-w)/2,(H-h)/2,w,h);
   return c.toDataURL("image/jpeg",.78);
 }
-function renderQR(){document.querySelectorAll(".qr").forEach(el=>{if(el.dataset.d)return;el.dataset.d=1;new QRCode(el,{text:el.dataset.c,width:200,height:200,correctLevel:QRCode.CorrectLevel.M})})}
+async function renderQR(){try{await libQR()}catch(e){return}document.querySelectorAll(".qr").forEach(el=>{if(el.dataset.d)return;el.dataset.d=1;new QRCode(el,{text:el.dataset.c,width:200,height:200,correctLevel:QRCode.CorrectLevel.M})})}
 function printEl(id,size){
   const st=document.createElement("style");st.textContent=`@page{size:${size};margin:${size=="A4"?"10mm":"0"}}`;document.head.append(st);
   const el=document.getElementById(id);el.classList.add("pr");document.body.classList.add("printing");
