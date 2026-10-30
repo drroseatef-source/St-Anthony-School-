@@ -1,5 +1,6 @@
 {
-  "name": "مدرسة القديس أثناسيوس للعلوم الكنسية",
+  "id": "./",
+  "name": "مدرسة القديس اثناسيوس الرسولي للعلوم الكنسية",
   "short_name": "مدرسة أثناسيوس",
   "start_url": "./",
   "scope": "./",
@@ -8,5 +9,8 @@
   "lang": "ar",
   "background_color": "#fbf7ee",
   "theme_color": "#1b2a5c",
-  "icons": [{"src": "logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}]
+  "icons": [
+    {"src": "logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
 }
