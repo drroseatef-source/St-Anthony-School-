@@ -92,7 +92,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,updatePassword} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {initializeFirestore,doc,getDoc,getDocs,setDoc,updateDoc,addDoc,collection,query,where,writeBatch,serverTimestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {initializeFirestore,doc,getDoc,getDocs,setDoc as _setDoc,updateDoc as _updateDoc,addDoc as _addDoc,collection,query,where,writeBatch as _writeBatch,serverTimestamp,deleteDoc as _deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyDpsJ0BZ9J9HuOF7PuEELwIN-5T7crqpsk",
@@ -114,7 +114,19 @@ let role=null,me=null,tab="students",Y=2026,signingUp=false;
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const mail=u=>u.includes("@")?u.trim():u.trim().toLowerCase()+"@church.app";
 const col=n=>collection(db,n);
-const list=async q=>(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
+/* كاش بسيط: قوايم المخدومين/الدفعات/المواد بتتحمّل مرة كل دقيقة بدل كل شاشة، وبتتمسح تلقائيًا عند أي تعديل */
+const CACHE=new Map(),CACHEABLE=new Set(["students","batches","subjects"]);let GEN=0;
+const bust=r=>{const p=String((r&&r.path)||"");if(!p||/^(students|batches|subjects)(\/|$)/.test(p)){GEN++;CACHE.clear()}};
+const wrapW=fn=>async(r,...a)=>{bust(r);try{return await fn(r,...a)}finally{bust(r)}};
+const setDoc=wrapW(_setDoc),updateDoc=wrapW(_updateDoc),addDoc=wrapW(_addDoc),deleteDoc=wrapW(_deleteDoc);
+const writeBatch=d=>{const b=_writeBatch(d),c=b.commit.bind(b);b.commit=async()=>{GEN++;CACHE.clear();try{return await c()}finally{GEN++;CACHE.clear()}};return b};
+const list=async q=>{
+  const k=q&&q.type==="collection"&&CACHEABLE.has(q.path)?q.path:null;
+  if(k){const c=CACHE.get(k);if(c&&Date.now()-c.t<60000)return c.v.map(x=>({...x}))}
+  const g=GEN,v=(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
+  if(k&&g===GEN)CACHE.set(k,{t:Date.now(),v});
+  return k?v.map(x=>({...x})):v;
+};
 const fmt=n=>Math.round(n*10)/10;
 const SUBJ=[["عهد قديم",1],["طقس",1],["عهد جديد",2],["تاريخ كنيسة",2],["عقيدة",3],["لاهوت مقارن",3],["لاهوت دفاعي",4],["قبطي",4]];
 
@@ -175,11 +187,11 @@ onAuthStateChanged(auth,u=>{ if(signingUp)return; u?route(u):login() });
 
 async function route(u){
   try{
-    const s=await getDoc(doc(db,"users",u.uid));
+    const [s,st]=await Promise.all([getDoc(doc(db,"users",u.uid)),getDoc(doc(db,"settings","main")).catch(()=>null)]);
     if(!s.exists()){await signOut(auth);return login("الحساب ده مش مفعّل، كلمي الأدمن")}
     me=s.data();role=me.role;
-    const st=await getDoc(doc(db,"settings","main"));if(st.exists())Y=st.data().year;
-    if(role==="admin"){await ensureSeed();admin()}else student();
+    if(st&&st.exists())Y=st.data().year;
+    if(role==="admin"){if(!(st&&st.exists()))await ensureSeed();admin()}else student();
   }catch(e){login("حصل خطأ: "+(e.message||e))}
 }
 async function ensureSeed(){
@@ -190,11 +202,10 @@ async function ensureSeed(){
   b.set(doc(db,"settings","main"),{year:Y});
   await b.commit();
 }
-async function login(msg=""){
-  let first=true;
-  try{first=!(await getDoc(doc(db,"settings","adminlock"))).exists()}catch(e){}
+async function login(msg="",first=false){
   app.innerHTML=`<div class="card"><div style="text-align:center"><img src="logo.png" alt="" style="width:120px;height:120px"></div><b>تسجيل الدخول</b><input id="u" placeholder="اسم المستخدم" autocomplete="username"><input id="p" type="password" placeholder="كلمة المرور" autocomplete="current-password">
   <button id="go">دخول</button>${first?'<button class="s" id="su">إنشاء حساب الأدمن (أول مرة فقط)</button>':""}<div class="m" id="lm">${esc(msg)}</div></div>`;
+  if(!first)getDoc(doc(db,"settings","adminlock")).then(d=>{if(!d.exists())login(msg,true)}).catch(()=>{});   // زر إنشاء الأدمن الأول بيظهر بعدين لو لزم
   $("#go").onclick=async()=>{
     try{await signInWithEmailAndPassword(auth,mail($("#u").value),$("#p").value)}
     catch(e){$("#lm").textContent="بيانات الدخول غير صحيحة"}
@@ -267,21 +278,50 @@ async function attendance(){
     scanner(lec,`الترم ${s.term} - ${s.name} - الأسبوع ${wk}`);
   };
 }
+async function startScanner(elId,onCode){
+  const box=$("#"+elId);
+  if("BarcodeDetector" in window){
+    let stream=null;
+    try{
+      const f=await BarcodeDetector.getSupportedFormats();
+      if(f.includes("qr_code")){
+        const det=new BarcodeDetector({formats:["qr_code"]});
+        stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});
+        const v=document.createElement("video");v.setAttribute("playsinline","");v.muted=true;v.srcObject=stream;
+        v.style.cssText="width:100%;max-height:60vh;object-fit:cover;border-radius:10px;background:#000";
+        box.innerHTML="";box.appendChild(v);await v.play();
+        let on=true,busy=false;
+        const t=setInterval(async()=>{if(!on||busy||v.readyState<2)return;busy=true;try{const r=await det.detect(v);if(r.length&&r[0].rawValue)onCode(r[0].rawValue)}catch(e){}busy=false},150);
+        return {stop:async()=>{on=false;clearInterval(t);stream.getTracks().forEach(x=>x.stop());box.innerHTML=""}};
+      }
+    }catch(e){
+      if(stream)stream.getTracks().forEach(x=>x.stop());
+      if(e&&(e.name=="NotAllowedError"||e.name=="NotFoundError"||e.name=="NotReadableError"))throw e;
+    }
+  }
+  await libScan();
+  const q=new Html5Qrcode(elId,{verbose:false,experimentalFeatures:{useBarCodeDetectorIfSupported:true}});
+  await q.start({facingMode:"environment"},{fps:10,qrbox:(w,h)=>{const m=Math.floor(Math.min(w,h)*.75);return{width:m,height:m}}},t=>onCode(t));
+  return {stop:async()=>{try{await q.stop()}catch(e){}}};
+}
 async function scanner(lec,title){
   const ex=await list(query(col("attendance"),where("lecture_id","==",lec.id)));
   const names=ex.map(a=>a.student_name);
   app.innerHTML=`<div class="card"><b>${esc(title)}</b><div id="rd" style="width:100%;margin:8px 0"></div><div id="msg" class="m">وجّهي الكاميرا على الـ QR</div>
-  <input id="mc" placeholder="أو اكتبي الكود يدويًا"><button id="mb" class="g">تسجيل</button></div>
+  <input id="mc" placeholder="أو اكتبي الكود يدويًا"><button id="mb" class="g">تسجيل</button>
+  <input id="sq" placeholder="🔍 أو ابحثي بالاسم"><div id="sr"></div></div>
   <div class="card"><b>الحاضرين: <span id="cnt">0</span></b><div id="ls" class="m"></div></div><button class="s" id="st">إنهاء المحاضرة</button>`;
   const draw=()=>{$("#cnt").textContent=names.length;$("#ls").innerHTML=names.slice().reverse().map(esc).join("<br>")};draw();
   let last="",lt=0;
-  const mark=async raw=>{
-    const code=raw.trim().toUpperCase();
-    if(!code||(code===last&&Date.now()-lt<4000))return;last=code;lt=Date.now();
-    if(!/^[A-Z0-9]{4,20}$/.test(code)){$("#msg").innerHTML='<span class="w">كود غير معروف</span>';return}
+  const mark=async(raw,fromScan)=>{
+    const code=String(raw).trim().toUpperCase();
+    if(!code)return;
+    if(fromScan&&code===last&&Date.now()-lt<10000)return;   // نفس الكارت قدام الكاميرا: تجاهله بدل ما يغيّر الرسالة
+    last=code;lt=Date.now();
+    if(!/^[A-Z0-9]{4,20}$/.test(code)){$("#msg").innerHTML=`<span class="w">كود غير معروف: ${esc(code.slice(0,30))}</span>`;return}
     try{
       const sd=await getDoc(doc(db,"students",code));
-      if(!sd.exists()){$("#msg").innerHTML='<span class="w">كود غير معروف</span>';return}
+      if(!sd.exists()){$("#msg").innerHTML=`<span class="w">كود غير معروف: ${esc(code)}</span>`;return}
       const s=sd.data(),aid=`${lec.id}_${code}`;
       if(s.status==="withdrawn"){$("#msg").innerHTML=`<span class="w">${esc(s.full_name)} منسحب من الكورس</span>`;return}
       if((await getDoc(doc(db,"attendance",aid))).exists()){$("#msg").innerHTML=`<span class="w">${esc(s.full_name)} مسجل قبل كده</span>`;return}
@@ -290,10 +330,15 @@ async function scanner(lec,title){
     }catch(e){$("#msg").textContent=e.message||String(e)}
   };
   $("#mb").onclick=()=>{mark($("#mc").value);$("#mc").value=""};
-  try{await libScan()}catch(e){$("#msg").innerHTML='<span class="w">تعذر تحميل الماسح، تأكدي من الإنترنت واكتبي الكود يدويًا</span>';$("#st").onclick=attendance;return}
-  const q=new Html5Qrcode("rd");
-  q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>{$("#msg").innerHTML='<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو سجلي بالكود</span>'});
-  $("#st").onclick=async()=>{try{await q.stop()}catch(e){}attendance()};
+  const stl=(await list(col("students"))).filter(isActive);
+  $("#sq").oninput=e=>{
+    const q=clean(e.target.value);
+    $("#sr").innerHTML=q?stl.filter(x=>x.full_name.includes(q)).slice(0,6).map(x=>`<button class="s" data-k="${esc(x.id)}">${esc(x.full_name)}</button>`).join(""):"";
+    document.querySelectorAll("#sr [data-k]").forEach(b=>b.onclick=()=>{mark(b.dataset.k);$("#sq").value="";$("#sr").innerHTML=""});
+  };
+  let sc=null;
+  $("#st").onclick=async()=>{try{sc&&await sc.stop()}catch(e){}attendance()};
+  try{sc=await startScanner("rd",t=>mark(t,true))}catch(e){$("#msg").innerHTML='<span class="w">الكاميرا مش شغالة ('+esc(e.message||e.name||"")+')، اسمحي بالوصول للكاميرا أو سجلي بالكود</span>'}
 }
 
 /* ---------- الكروت والنقاط (XP) ---------- */
@@ -308,7 +353,7 @@ const CARDS=[
  {id:"gentleness",n:"الوداعة",r:"شائع",xp:100},
  {id:"selfcontrol",n:"التعفف",r:"شائع",xp:100}];
 const EARLY={id:"early",n:"إليك أبكر",r:"نشاط",xp:200};
-const ALLC=[...CARDS,EARLY],cardOf=id=>ALLC.find(c=>c.id==id);
+const ALLC=[EARLY,...CARDS],cardOf=id=>ALLC.find(c=>c.id==id);
 const SET_XP=CARDS.reduce((a,c)=>a+c.xp,0),EARLY_NEED=4,BONUS=SET_XP+EARLY_NEED*EARLY.xp;
 const LEVELS=[[0,"المستوى 1","التلميذ"],[1000,"المستوى 2","المستكشف"],[2500,"المستوى 3","الخبير (Expert)"]];
 const levelOf=x=>{let i=0;LEVELS.forEach((l,k)=>{if(x>=l[0])i=k});return i};
@@ -335,16 +380,16 @@ async function syncBonus(code,name){
 }
 
 function cardsAdmin(){
-  let sel=inEarlyWindow()?"early":CARDS[0].id;
+  let sel=inEarlyWindow()?"early":null;
   const draw=()=>{
     $("#cg").innerHTML=ALLC.map(c=>`<div class="cc ${c.id==sel?"on":""}" data-c="${c.id}"><img src="${cimg(c.id)}" loading="lazy" alt=""><span class="x">${c.xp}</span><b>${esc(c.n)}</b></div>`).join("");
     document.querySelectorAll("#cg [data-c]").forEach(e=>e.onclick=()=>{sel=e.dataset.c;draw()});
-    $("#go").textContent=`▶ بدء منح كارت «${cardOf(sel).n}» (${cardOf(sel).xp} XP)`;
+    $("#go").disabled=!sel;$("#go").textContent=sel?`▶ بدء منح كارت «${cardOf(sel).n}» (${cardOf(sel).xp} XP)`:"اختاري كارت الأول";
   };
   shell(`<div class="card"><b>اختاري الكارت اللي هتمنحيه</b>${inEarlyWindow()?'<div class="ok m">⏰ دلوقتي في وقت إليك أبكر، اتحدد الكارت تلقائيًا</div>':""}<div class="cg" id="cg" style="margin-top:8px"></div><button class="g" id="go"></button></div>
   <button class="s" id="rp">📊 النقاط حسب الأسبوع</button><button class="s" id="rd2">💰 صرف نقاط</button>`);
   draw();
-  $("#go").onclick=()=>awardScreen(sel);
+  $("#go").onclick=()=>{if(sel)awardScreen(sel)};
   $("#rp").onclick=xpReport;
   $("#rd2").onclick=redeemScreen;
 }
@@ -364,11 +409,21 @@ async function awardScreen(cid){
   const draw=()=>{$("#cnt").textContent=hist.length;$("#sum").textContent=sum;$("#ls").innerHTML=hist.slice().reverse().map(h=>esc(h.name)).join("<br>")};
   let last="",lt=0;
   const give=async(s,raw)=>{
-    if(!s){msg('<span class="w">كود غير معروف</span>');return}
+    if(!s){msg(`<span class="w">كود غير معروف${raw?": "+esc(raw):""}</span>`);return}
     const code=s.id,today=cairoNow().date;
     const lid=cid=="early"?`${Y}_${code}_early_${today}`:`${Y}_${code}_${cid}`;
     try{
-      if((await getDoc(doc(db,"xp_log",lid))).exists()){msg(`<span class="w">${esc(s.full_name)} معاه الكارت ده قبل كده${cid=="early"?" (النهارده)":""}</span>`);return}
+      const old=await getDoc(doc(db,"xp_log",lid));
+      if(old.exists()){
+        const od=old.data();let when=od.date||"";
+        try{if(od.ts&&od.ts.toDate)when+=" الساعة "+od.ts.toDate().toLocaleTimeString("ar-EG",{timeZone:"Africa/Cairo",hour:"2-digit",minute:"2-digit"})}catch(e){}
+        msg(`<span class="w">${esc(s.full_name)} خد كارت «${esc(card.n)}» قبل كده (${esc(when)})</span><button class="s" id="cx">إلغاء المنح السابق</button>`);
+        $("#cx").onclick=async()=>{
+          if(!confirm(`إلغاء منح «${card.n}» السابق لـ ${s.full_name}؟`))return;
+          try{await deleteDoc(doc(db,"xp_log",lid));await syncBonus(code,s.full_name);last="";msg('<span class="ok">اتلغى المنح السابق. امسحي الكارت تاني لو عايزة تمنحيه</span>')}catch(e){msg(`<span class="w">${esc(e.message||e)}</span>`)}
+        };
+        return;
+      }
       await setDoc(doc(db,"xp_log",lid),{student_id:code,student_name:s.full_name,type:"card",card_id:cid,xp:card.xp,year:Y,date:today,ts:serverTimestamp()});
       hist.push({lid,code,name:s.full_name,xp:card.xp});sum+=card.xp;draw();
       navigator.vibrate&&navigator.vibrate(120);
@@ -377,13 +432,15 @@ async function awardScreen(cid){
       msg(`<span class="ok">✔ ${esc(s.full_name)} +${card.xp} XP${extra}</span>`);
     }catch(e){msg(`<span class="w">${esc(e.message||e)}</span>`)}
   };
-  const mark=async raw=>{
-    const code=raw.trim().toUpperCase();
-    if(!code||(code===last&&Date.now()-lt<4000))return;last=code;lt=Date.now();
-    if(!/^[A-Z0-9]{4,20}$/.test(code)){msg('<span class="w">كود غير معروف</span>');return}
+  const mark=async(raw,fromScan)=>{
+    const code=String(raw).trim().toUpperCase();
+    if(!code)return;
+    if(fromScan&&code===last&&Date.now()-lt<10000)return;   // نفس الكارت لسه قدام الكاميرا: تجاهله
+    last=code;lt=Date.now();
+    if(!/^[A-Z0-9]{4,20}$/.test(code)){msg(`<span class="w">كود غير معروف: ${esc(code.slice(0,30))}</span>`);return}
     let s=by[code];
     if(!s){const d=await getDoc(doc(db,"students",code));if(d.exists()){s={id:d.id,...d.data()};if(s.status==="withdrawn"){msg(`<span class="w">${esc(s.full_name)} منسحب من الكورس</span>`);return}}}
-    give(s);
+    give(s,code);
   };
   $("#mb").onclick=()=>{mark($("#mc").value);$("#mc").value=""};
   $("#sq").oninput=e=>{
@@ -396,10 +453,9 @@ async function awardScreen(cid){
     try{await deleteDoc(doc(db,"xp_log",h.lid));await syncBonus(h.code,h.name);sum-=h.xp;draw();last="";msg(`<span class="m">اتلغى منح ${esc(card.n)} لـ ${esc(h.name)}</span>`)}
     catch(e){hist.push(h);msg(`<span class="w">${esc(e.message||e)}</span>`)}
   };
-  try{await libScan()}catch(e){msg('<span class="w">تعذر تحميل الماسح، تأكدي من الإنترنت واكتبي الكود يدويًا</span>');$("#st").onclick=cardsAdmin;return}
-  const q=new Html5Qrcode("rd");
-  q.start({facingMode:"environment"},{fps:10,qrbox:220},t=>mark(t)).catch(()=>msg('<span class="w">الكاميرا مش شغالة، اسمحي بالوصول للكاميرا أو اكتبي الكود</span>'));
-  $("#st").onclick=async()=>{try{await q.stop()}catch(e){}cardsAdmin()};
+  let sc=null;
+  $("#st").onclick=async()=>{try{sc&&await sc.stop()}catch(e){}cardsAdmin()};
+  try{sc=await startScanner("rd",t=>mark(t,true))}catch(e){msg('<span class="w">الكاميرا مش شغالة ('+esc(e.message||e.name||"")+')، اسمحي بالوصول للكاميرا أو اكتبي الكود</span>')}
 }
 
 async function xpReport(){
@@ -489,10 +545,20 @@ const genUser=()=>"st"+String(Math.floor(Math.random()*90000)+10000);
 const genCode=()=>"ATH"+String(Math.floor(Math.random()*900000)+100000);
 const genPw=()=>{const a="abcdefghjkmnpqrstuvwxyz23456789";return Array.from(crypto.getRandomValues(new Uint8Array(8)),x=>a[x%a.length]).join("")};
 async function shrink(file){
-  const im=await createImageBitmap(file),W=270,H=360,c=document.createElement("canvas");c.width=W;c.height=H;
-  const k=Math.max(W/im.width,H/im.height),w=im.width*k,h=im.height*k;
+  let im;
+  try{im=await createImageBitmap(file)}
+  catch(e){   // طريقة بديلة لو الأولى فشلت
+    im=await new Promise((ok,no)=>{const u=URL.createObjectURL(file),t=new Image();
+      t.onload=()=>{URL.revokeObjectURL(u);ok(t)};
+      t.onerror=()=>{URL.revokeObjectURL(u);no(new Error("الصورة دي مش قابلة للقراءة (ممكن تكون HEIC أو لسه ما اتحمّلتش من الجاليري)"))};
+      t.src=u});
+  }
+  const iw=im.width||im.naturalWidth,ih=im.height||im.naturalHeight;
+  if(!iw||!ih)throw new Error("الصورة فاضية أو تالفة");
+  const W=240,H=320,c=document.createElement("canvas");c.width=W;c.height=H;
+  const k=Math.max(W/iw,H/ih),w=iw*k,h=ih*k;
   c.getContext("2d").drawImage(im,(W-w)/2,(H-h)/2,w,h);
-  return c.toDataURL("image/jpeg",.78);
+  return c.toDataURL("image/jpeg",.72);
 }
 function renderQR(){document.querySelectorAll(".qr").forEach(el=>{if(el.dataset.d)return;el.dataset.d=1;try{const q=qrcode(0,"M");q.addData(el.dataset.c);q.make();el.innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true})}catch(e){el.textContent=el.dataset.c}})}
 function printEl(id,size){
@@ -562,6 +628,7 @@ async function students(){
   try{await ensureSeq(st)}catch(e){}
   st.sort((a,b)=>(a.seq||0)-(b.seq||0)||arSort(a,b));
   const act=st.filter(isActive);
+  const szB=JSON.stringify(st).length,szTxt=szB>1048576?(szB/1048576).toFixed(1)+" ميجا":Math.round(szB/1024)+" كيلو";
   const opt=(v,t,cur)=>`<option value="${esc(v)}" ${String(cur)===String(v)?"selected":""}>${esc(t)}</option>`;
   shell(`${bdayCard(act)}
   <div class="row" style="gap:6px"><button class="g" id="addp">➕ إضافة مخدوم</button><button class="s" id="imp">📥 استيراد Excel</button></div>
@@ -571,7 +638,7 @@ async function students(){
    <select id="fm" style="flex:1;min-width:0">${opt("","كل شهور الميلاد",SF.m)}${MONTHS.map((m,i)=>opt(i+1,m,SF.m)).join("")}${opt("0","بدون تاريخ ميلاد",SF.m)}</select></div>
    <div class="row" style="gap:6px"><select id="fs" style="flex:1;min-width:0">${opt("act","النشطين",SF.s)}${opt("wd","المنسحبين",SF.s)}${opt("all","الكل",SF.s)}</select>
    <select id="fd" style="flex:1;min-width:0">${opt("","كل البيانات",SF.d)}${opt("miss","ناقص بيانات",SF.d)}</select></div>
-   <div class="row"><span class="m" id="fc"></span><button class="s" id="fx" style="width:auto">مسح الفلاتر</button></div></div>
+   <div class="row"><span class="m" id="fc"></span><span style="display:flex;gap:6px"><button class="s" id="rf" style="width:auto">🔄 تحديث</button><button class="s" id="fx" style="width:auto">مسح الفلاتر</button></span></div></div>
   <div id="fl"></div>`);
   const draw=()=>{
     const q=clean($("#fq").value),dg=q.replace(/\D/g,"");
@@ -588,7 +655,7 @@ async function students(){
       }
       return true;
     });
-    $("#fc").textContent=`${r.length} من ${st.length}`;
+    $("#fc").textContent=`${r.length} من ${st.length} • حجم البيانات ${szTxt}`;
     $("#fl").innerHTML=r.slice(0,SF.n).map(s=>{const mi=missingOf(s),a=isActive(s);
       return `<div class="card row" style="${a?"":"opacity:.6"}"><div>${s.seq?`<span class="m">#${String(s.seq).padStart(3,"0")}</span> `:""}${esc(s.full_name)}${a?"":' <span class="w">(منسحب)</span>'}<div class="m">${esc(s.batch_name)} • ${esc(s.code)}${s.birth_date?" • "+(+s.birth_date.slice(8,10))+" "+MONTHS[(+s.birth_date.slice(5,7))-1]:""}</div>${mi.length&&a?`<div class="w" style="font-size:.8em">⚠ ناقص: ${esc(mi.join("، "))}</div>`:""}</div><div style="display:flex;gap:6px"><button class="s" style="width:auto" data-id="${esc(s.id)}">كارت</button><button class="s" style="width:auto" data-e="${esc(s.id)}">تعديل</button></div></div>`}).join("")
       +(r.length>SF.n?`<button class="s" id="more">عرض المزيد (باقي ${r.length-SF.n})</button>`:"")
@@ -601,6 +668,7 @@ async function students(){
   $("#fq").oninput=()=>{SF.q=$("#fq").value;SF.n=25;draw()};
   ["fb","fm","fs","fd"].forEach(id=>$("#"+id).onchange=sync);
   $("#fx").onclick=()=>{Object.assign(SF,{q:"",b:"",m:"",s:"act",d:"",n:25});students()};
+  $("#rf").onclick=()=>{CACHE.clear();students()};
   $("#addp").onclick=addStudentPage;
   $("#allc").onclick=()=>allCards();
   $("#imp").onclick=importStudents;
@@ -619,7 +687,11 @@ async function addStudentPage(){
     if(!$("#n").value||!$("#bt").value)return alert("الاسم والدفعة مطلوبين");
     const btn=$("#adds");btn.disabled=true;btn.textContent="جاري الحفظ...";
     try{
-      const photo=$("#pic").files[0]?await shrink($("#pic").files[0]):"";
+      let photo="";
+      if($("#pic").files[0]){
+        try{photo=await shrink($("#pic").files[0])}
+        catch(pe){if(!confirm(pe.message+"\n\nتحبي تحفظي المخدوم من غير صورة وتضيفيها بعدين من (تعديل)؟")){btn.disabled=false;btn.textContent="حفظ وإنشاء الـ ID";return}}
+      }
       const batch=bs.find(b=>b.id==$("#bt").value);
       const s=await createStudent({full_name:clean($("#n").value),birth_date:$("#bd").value||"",address:clean($("#ad").value),confession_father:clean($("#cf").value),church:clean($("#ch").value),phones:$("#ph").value.split(/[,،]/).map(normPhone).filter(Boolean),photo},batch,await nextSeq());
       idcard(s);
