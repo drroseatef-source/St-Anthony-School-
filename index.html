@@ -521,7 +521,81 @@ async function reports(){
   const groups=sts.filter(s=>act.has(s.batch_id)&&isActive(s)).sort((a,b)=>a.full_name.localeCompare(b.full_name,"ar"))
     .map(s=>({name:s.full_name,batch:s.batch_name,items:calc(subs,lecs,atts.filter(a=>a.student_id==s.id))}));
   const wn=groups.filter(g=>g.items.some(i=>i.warning)).length;
-  shell(`<div class="card"><b>تقرير الحضور ${Y}-${Y+1}</b><div class="m">درجة الحضور من 25 • تحت 70% = إنذار ⚠ • عدد المنذرين: ${wn}</div></div>${attBlock(groups)}`);
+  shell(`<button class="g" id="exr">📤 تصدير بيانات إلى Excel</button><div class="card"><b>تقرير الحضور ${Y}-${Y+1}</b><div class="m">درجة الحضور من 25 • تحت 70% = إنذار ⚠ • عدد المنذرين: ${wn}</div></div>${attBlock(groups)}`);
+  $("#exr").onclick=exportPage;
+}
+
+/* ---------- تصدير Excel ---------- */
+function buildExport(D,opt){
+  const {subs,lecs,atts,qz,qr,xp,bs}=D;
+  const bn=Object.fromEntries(bs.map(b=>[b.id,b.name]));
+  const st=D.st.filter(s=>(opt.wd||isActive(s))&&(!opt.batch||s.batch_id==opt.batch))
+    .sort((a,b)=>String(a.batch_name||"").localeCompare(String(b.batch_name||""),"ar")||(a.seq||0)-(b.seq||0)||String(a.full_name).localeCompare(String(b.full_name),"ar"));
+  const by=(arr,k)=>{const m=new Map();arr.forEach(x=>{const a=m.get(x[k])||[];a.push(x);m.set(x[k],a)});return m};
+  const attBy=by(atts,"student_id"),xpBy=by(xp,"student_id");
+  const subOrd=[...subs].sort((a,b)=>a.term-b.term||a.sort-b.sort),sIdx=Object.fromEntries(subOrd.map((s,i)=>[s.id,i]));
+  const subCols=calc(subs,lecs,[]);                     // المواد اللي ليها محاضرات
+  const lecOrd=[...lecs].sort((a,b)=>(sIdx[a.subject_id]??99)-(sIdx[b.subject_id]??99)||a.week_no-b.week_no);
+  const qzOrd=qz.filter(q=>q.status!="draft").sort((a,b)=>(sIdx[a.subject_id]??99)-(sIdx[b.subject_id]??99)||a.week_no-b.week_no);
+  const resKey=new Set(qr.map(r=>r.quiz_id+"|"+r.student_id)),resMap=new Map(qr.map(r=>[r.quiz_id+"|"+r.student_id,r]));
+  const lecAtt=new Set(atts.map(a=>a.lecture_id+"|"+a.student_id));
+  const avg=a=>a.length?fmt(a.reduce((x,y)=>x+y,0)/a.length):"";
+  const num=(i)=>i+1;
+  // حسابات لكل مخدوم
+  const info=st.map(s=>{
+    const rows=calc(subs,lecs,attBy.get(s.id)||[]);
+    const t=tally(xpBy.get(s.id)||[]);
+    let qs=0,qt=0;qzOrd.forEach(q=>{qt+=(q.questions||[]).length;const r=resMap.get(q.id+"|"+s.id);if(r)qs+=Number(r.score)||0});
+    return {s,rows,t,pct:avg(rows.map(r=>r.attendance_pct)),grade:avg(rows.map(r=>r.attendance_grade)),warn:rows.filter(r=>r.warning).length,qs,qt,qp:qt?fmt(qs/qt*100):""};
+  });
+  const base=(x,i)=>[num(i),x.s.full_name,x.s.batch_name||bn[x.s.batch_id]||""];
+  const sheets={};
+  sheets.summary={name:"ملخص عام",rows:[["م","الاسم","الدفعة","متوسط الحضور %","درجة الحضور (من 25)","مواد فيها إنذار","نسبة الكويزات %","مستوى الـ XP","إجمالي XP"],
+    ...info.map((x,i)=>[...base(x,i),x.pct,x.grade,x.warn,x.qp,LEVELS[x.t.lvl][2],x.t.earned])],w:[5,30,18,14,16,14,14,16,12]};
+  sheets.students={name:"المخدومين",rows:[["م","الاسم","الدفعة","الكود","التليفون","تاريخ الميلاد","العنوان","أب الاعتراف","الكنيسة","الحالة"],
+    ...info.map((x,i)=>[x.s.seq||num(i),x.s.full_name,x.s.batch_name||bn[x.s.batch_id]||"",x.s.code||x.s.id,(x.s.phones||[]).join("، "),x.s.birth_date||"",x.s.address||"",x.s.confession_father||"",x.s.church||"",isActive(x.s)?"نشط":"منسحب"])],
+    w:[6,30,18,14,18,12,28,18,22,8]};
+  sheets.att={name:"ملخص الحضور",rows:[["م","الاسم","الدفعة",...subCols.flatMap(c=>[`${c.subject_name} - حضر (من ${c.total_lectures})`,`${c.subject_name} %`]),"متوسط الحضور %","درجة الحضور (من 25)","إنذار"],
+    ...info.map((x,i)=>{const m=Object.fromEntries(x.rows.map(r=>[r.subject_name,r]));
+      return [...base(x,i),...subCols.flatMap(c=>{const r=m[c.subject_name];return [r?r.attended:0,r?r.attendance_pct:0]}),x.pct,x.grade,x.warn?"إنذار":""]})],
+    w:[5,30,18,...subCols.flatMap(()=>[14,10]),14,16,8]};
+  sheets.attd={name:"تفصيل الحضور",rows:[["م","الاسم","الدفعة",...lecOrd.map(l=>`${l.subject_name} - أسبوع ${l.week_no}`)],
+    ...info.map((x,i)=>[...base(x,i),...lecOrd.map(l=>lecAtt.has(l.id+"|"+x.s.id)?"✔":"✘")])],w:[5,30,18,...lecOrd.map(()=>14)]};
+  sheets.quiz={name:"الكويزات",rows:[["م","الاسم","الدفعة",...qzOrd.map(q=>`${q.subject_name} - أسبوع ${q.week_no} (من ${(q.questions||[]).length})`),"المجموع","إجمالي الدرجات","النسبة %"],
+    ...info.map((x,i)=>[...base(x,i),...qzOrd.map(q=>{const r=resMap.get(q.id+"|"+x.s.id);return r?Number(r.score)||0:""}),x.qs,x.qt,x.qp])],
+    w:[5,30,18,...qzOrd.map(()=>16),10,14,10]};
+  sheets.xp={name:"نقاط XP",rows:[["م","الاسم","الدفعة","المستوى","إجمالي XP","المصروف XP","الرصيد XP","الرصيد بالجنيه",`ثمار الروح (من ${CARDS.length})`,"عدد إليك أبكر","البونص"],
+    ...info.map((x,i)=>[...base(x,i),LEVELS[x.t.lvl][2],x.t.earned,x.t.spent,x.t.wallet,fmt(x.t.wallet/10),x.t.fruits.size,x.t.early,x.t.bonus?"تم":""])],w:[5,30,18,16,12,12,12,14,16,14,8]};
+  return sheets;
+}
+function exportPage(){
+  let bsAll=[];
+  app.innerHTML=`<div class="topbar noprint"><button class="s" id="bk">→ رجوع</button></div>
+  <div class="card"><b>تصدير بيانات إلى Excel</b><div class="m">الملف بيتحمّل على التليفون، وتقدري تطبعيه أو تبعتيه. كلمات المرور مش بتتصدّر.</div>
+  <select id="eb"><option value="">كل الدفعات</option></select>
+  <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input id="ew" type="checkbox" style="width:auto;margin:0"> أدخّل المنسحبين كمان</label></div>
+  <div class="card"><button class="g" id="e0">📦 كل التقارير في ملف واحد</button><div class="m">ملخص عام + المخدومين + الحضور + الكويزات + XP (كل واحد في شيت)</div></div>
+  <div class="card"><button class="s" id="e1">👥 بيانات المخدومين</button><button class="s" id="e2">📅 الحضور (ملخص + تفصيل المحاضرات)</button><button class="s" id="e3">📝 الكويزات والدرجات</button><button class="s" id="e4">🃏 نقاط XP والمستويات</button></div><div id="em" class="m"></div>`;
+  $("#bk").onclick=admin;
+  list(col("batches")).then(b=>{bsAll=b;$("#eb").innerHTML='<option value="">كل الدفعات</option>'+b.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")});
+  const run=async(label,keys)=>{
+    const m=$("#em");m.textContent="جاري تجهيز الملف...";
+    try{
+      await loadXLSX();
+      const [subs,lecs,atts,st,bs,qz,qr,xp]=await Promise.all([list(col("subjects")),list(query(col("lectures"),where("year","==",Y))),list(query(col("attendance"),where("year","==",Y))),list(col("students")),list(col("batches")),list(query(col("quizzes"),where("year","==",Y))),list(query(col("quiz_results"),where("year","==",Y))),list(query(col("xp_log"),where("year","==",Y)))]);
+      const sh=buildExport({subs,lecs,atts,st,bs,qz,qr,xp},{batch:$("#eb").value,wd:$("#ew").checked});
+      const wb=XLSX.utils.book_new();
+      keys.forEach(k=>{const x=sh[k],ws=XLSX.utils.aoa_to_sheet(x.rows);ws["!cols"]=x.w.map(c=>({wch:c}));XLSX.utils.book_append_sheet(wb,ws,x.name)});
+      wb.Workbook={Views:[{RTL:true}]};
+      XLSX.writeFile(wb,`${label}-${Y}-${cairoNow().date}.xlsx`);
+      m.innerHTML='<span class="ok">✔ تم تجهيز الملف، شوفيه في التنزيلات</span>';
+    }catch(e){m.innerHTML=`<span class="w">${esc(e.message||e)}</span>`}
+  };
+  $("#e0").onclick=()=>run("تقرير-شامل",["summary","students","att","attd","quiz","xp"]);
+  $("#e1").onclick=()=>run("المخدومين",["students"]);
+  $("#e2").onclick=()=>run("الحضور",["att","attd"]);
+  $("#e3").onclick=()=>run("الكويزات",["quiz"]);
+  $("#e4").onclick=()=>run("نقاط-XP",["xp"]);
 }
 
 /* ---------- الدفعات ---------- */
@@ -632,7 +706,7 @@ async function students(){
   const opt=(v,t,cur)=>`<option value="${esc(v)}" ${String(cur)===String(v)?"selected":""}>${esc(t)}</option>`;
   shell(`${bdayCard(act)}
   <div class="row" style="gap:6px"><button class="g" id="addp">➕ إضافة مخدوم</button><button class="s" id="imp">📥 استيراد Excel</button></div>
-  <div class="row" style="gap:6px"><button class="s" id="rvw">قائمة المراجعة</button><button class="s" id="allc">🖨 طباعة الكروت</button></div>
+  <div class="row" style="gap:6px"><button class="s" id="rvw">قائمة المراجعة</button><button class="s" id="allc">🖨 طباعة الكروت</button><button class="s" id="exs">📤 Excel</button></div>
   <div class="card"><input id="fq" placeholder="🔍 بحث بالاسم أو الكود أو التليفون أو الرقم" value="${esc(SF.q)}">
    <div class="row" style="gap:6px"><select id="fb" style="flex:1;min-width:0">${opt("","كل الدفعات",SF.b)}${bs.map(b=>opt(b.id,b.name,SF.b)).join("")}</select>
    <select id="fm" style="flex:1;min-width:0">${opt("","كل شهور الميلاد",SF.m)}${MONTHS.map((m,i)=>opt(i+1,m,SF.m)).join("")}${opt("0","بدون تاريخ ميلاد",SF.m)}</select></div>
@@ -673,6 +747,7 @@ async function students(){
   $("#allc").onclick=()=>allCards();
   $("#imp").onclick=importStudents;
   $("#rvw").onclick=reviewList;
+  $("#exs").onclick=exportPage;
   draw();
 }
 
